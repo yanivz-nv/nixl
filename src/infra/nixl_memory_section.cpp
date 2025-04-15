@@ -371,9 +371,9 @@ nixl_status_t nixlRemoteSection::addDescList (
     nixlBasicDesc *p = &out;
     nixl_status_t ret;
     for (int i=0; i<mem_elms.descCount(); ++i) {
-        // TODO: remote might change the metadata, have to keep stringDesc to compare
-        //       if we support partial updates. Also Can add overlap checks (erroneous)
-        if (target->getIndex((const nixlBasicDesc) mem_elms[i]) < 0) {
+        // TODO: Can add overlap checks (erroneous)
+        int idx = target->getIndex(static_cast<nixlBasicDesc>(mem_elms[i]));
+        if (idx < 0) {
             ret = backend->loadRemoteMD(mem_elms[i], nixl_mem, agentName, out.metadataP);
             // In case of errors, no need to remove the previous entries
             // Agent will delete the full object.
@@ -382,6 +382,11 @@ nixl_status_t nixlRemoteSection::addDescList (
             *p = mem_elms[i]; // Copy the basic desc part
             out.metaBlob = mem_elms[i].metaInfo;
             target->addDesc(out);
+        } else {
+            const nixl_blob_t &prev_meta_info = (*target)[idx].metaBlob;
+            // TODO: Support metadata updates
+            if (prev_meta_info != mem_elms[i].metaInfo)
+                return NIXL_ERR_NOT_ALLOWED;
         }
     }
     return NIXL_SUCCESS;
