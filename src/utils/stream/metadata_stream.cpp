@@ -69,7 +69,8 @@ void nixlMDStreamListener::setupListener() {
 
     if (bind(socketFd, (struct sockaddr*)&listenerAddr,
              sizeof(listenerAddr)) < 0) {
-        std::cerr << "Socket Bind failed while setting up listener for MD\n";
+        std::cerr << "Socket Bind failed while setting up listener for MD: "
+                  << strerror(errno) << "\n";
         closeStream();
         return;
     }
