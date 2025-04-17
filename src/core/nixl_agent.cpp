@@ -987,6 +987,81 @@ nixlAgent::getLocalMD (nixl_blob_t &str) const {
 }
 
 nixl_status_t
+nixlAgent::getLocalPartialMD(nixl_reg_dlist_t &descs,
+                             nixl_blob_t &str,
+                             const nixl_opt_args_t* extra_params) const {
+    backend_list_t tmp_list;
+    backend_list_t *backend_list;
+    nixl_status_t ret;
+
+    if (!extra_params || extra_params->backends.size() == 0) {
+        if (descs.descCount() != 0) {
+            // Non-empty dlist, return backends that support the memory type
+            backend_list = &data->memToBackend[descs.getType()];
+            if (backend_list->empty())
+                return NIXL_ERR_NOT_FOUND;
+        } else {
+            // Empty dlist, return all backends
+            backend_list = &tmp_list;
+            for (const auto & elm : data->backendEngines)
+                backend_list->push_back(elm.second);
+        }
+    } else {
+        backend_list = &tmp_list;
+        for (const auto & elm : extra_params->backends)
+            backend_list->push_back(elm->engine);
+    }
+
+    // First find all relevant engines and their conn info.
+    // Best effort, ignore if no conn info.
+    backend_set_t selected_engines;
+    std::vector<typename decltype(data->connMD)::iterator> found_iters;
+    for (const auto &backend : *backend_list) {
+        auto it = data->connMD.find(backend->getType());
+        if (it == data->connMD.end())
+            continue;
+        found_iters.push_back(it);
+        selected_engines.insert(backend);
+    }
+
+    nixlSerDes sd;
+    ret = sd.addStr("Agent", data->name);
+    if(ret)
+        return ret;
+
+    // Only add connection info if requested via extra_params or empty dlist
+    size_t conn_cnt = ((extra_params && extra_params->includeConnInfo) || descs.descCount() == 0) ?
+                      found_iters.size() : 0;
+    ret = sd.addBuf("Conns", &conn_cnt, sizeof(conn_cnt));
+    if(ret)
+        return ret;
+
+    for (size_t i = 0; i < conn_cnt; i++) {
+        ret = sd.addStr("t", found_iters[i]->first);
+        if(ret)
+            return ret;
+        ret = sd.addStr("c", found_iters[i]->second);
+        if(ret)
+            return ret;
+    }
+
+    // No engines found, but there are descs, this is an error
+    if (selected_engines.size() == 0 && descs.descCount() > 0)
+        return NIXL_ERR_BACKEND;
+
+    ret = sd.addStr("", "MemSection");
+    if(ret)
+        return ret;
+
+    ret = data->memorySection->serializePartial(&sd, selected_engines, descs);
+    if(ret)
+        return ret;
+
+    str = sd.exportStr();
+    return NIXL_SUCCESS;
+}
+
+nixl_status_t
 nixlAgent::sendLocalMD (const std::string remote_ip, const int port) const {
 
     if(remote_ip.size() == 0){
@@ -1063,10 +1138,6 @@ nixlAgent::loadRemoteMD (const nixl_blob_t &remote_metadata,
     if(ret)
         return ret;
 
-    // TODO: add support for marginal updates, then conn_cnt might be 0
-    if (conn_cnt<1)
-        return NIXL_ERR_INVALID_PARAM;
-
     for (size_t i=0; i<conn_cnt; ++i) {
         nixl_backend = sd.getStr("t");
         if (nixl_backend.size() == 0)
@@ -1101,7 +1172,7 @@ nixlAgent::loadRemoteMD (const nixl_blob_t &remote_metadata,
     }
 
     // No common backend, no point in loading the rest, unexpected
-    if (count == 0)
+    if (count == 0 && conn_cnt > 0)
         return NIXL_ERR_BACKEND;
 
     if (sd.getStr("") != "MemSection")

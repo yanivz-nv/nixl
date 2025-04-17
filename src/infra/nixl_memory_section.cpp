@@ -290,6 +290,47 @@ nixl_status_t nixlLocalSection::serialize(nixlSerDes* serializer) const {
     return NIXL_SUCCESS;
 }
 
+nixl_status_t nixlLocalSection::serializePartial(nixlSerDes* serializer,
+                                                 const backend_set_t &backends,
+                                                 const nixl_reg_dlist_t &mem_elms) const {
+    nixl_xfer_dlist_t trimmed = mem_elms.trim();
+    nixl_mem_t nixl_mem = mem_elms.getType();
+    nixl_status_t ret;
+
+    // If there are no descriptors to serialize, just serialize empty list of sections
+    if (mem_elms.descCount() == 0) {
+        size_t seg_count = 0;
+        ret = serializer->addBuf("nixlSecElms", &seg_count, sizeof(seg_count));
+        return ret;
+    }
+
+    // TODO: consider concatenating 2 serializers instead of using mem_elms_to_serialize
+    std::vector<std::pair<nixlBackendEngine*, nixl_reg_dlist_t>> mem_elms_to_serialize;
+    for (const auto &backend : backends) {
+        section_key_t sec_key = std::make_pair(nixl_mem, backend);
+        if (sectionMap.count(sec_key) == 0)
+            continue;
+
+        nixl_meta_dlist_t resp(nixl_mem, mem_elms.isSorted());
+        ret = populate(trimmed, backend, resp);
+        if (ret) return ret;
+        mem_elms_to_serialize.emplace_back(backend, getStringDesc(backend, resp));
+    }
+
+    size_t seg_count = mem_elms_to_serialize.size();
+    ret = serializer->addBuf("nixlSecElms", &seg_count, sizeof(seg_count));
+    if (ret) return ret;
+
+    for (const auto &[backend, s_desc] : mem_elms_to_serialize) {
+        ret = serializer->addStr("bknd", backend->getType());
+        if (ret) return ret;
+        ret = s_desc.serialize(serializer);
+        if (ret) return ret;
+    }
+
+    return NIXL_SUCCESS;
+}
+
 nixlLocalSection::~nixlLocalSection() {
     nixl_meta_dlist_t* m_desc;
     nixlBackendEngine* eng;
@@ -365,8 +406,10 @@ nixl_status_t nixlRemoteSection::loadRemoteData (nixlSerDes* deserializer,
         nixl_reg_dlist_t s_desc(deserializer);
         if (s_desc.descCount()==0) // can be used for entry removal in future
             return NIXL_ERR_NOT_FOUND;
-        ret = addDescList(s_desc, backendToEngineMap[nixl_backend]);
-        if (ret) return ret;
+        if (backendToEngineMap.count(nixl_backend) != 0) {
+            ret = addDescList(s_desc, backendToEngineMap[nixl_backend]);
+            if (ret) return ret;
+        }
     }
     return NIXL_SUCCESS;
 }
