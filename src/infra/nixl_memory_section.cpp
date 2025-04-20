@@ -267,20 +267,20 @@ nixl_status_t nixlLocalSection::remDescList (const nixl_meta_dlist_t &mem_elms,
     return NIXL_SUCCESS;
 }
 
-nixl_status_t nixlLocalSection::serialize(nixlSerDes* serializer) const {
+nixl_status_t nixlLocalSection::serializeSections(nixlSerDes* serializer,
+                                                  const section_map_t &sections) const {
     nixl_status_t ret;
-    size_t seg_count = sectionMap.size();
-    nixlBackendEngine* eng;
 
+    size_t seg_count = sections.size();
     ret = serializer->addBuf("nixlSecElms", &seg_count, sizeof(seg_count));
     if (ret) return ret;
 
-    for (auto &seg : sectionMap) {
-        eng = seg.first.second;
+    for (const auto &[sec_key, m_desc] : sections) {
+        nixlBackendEngine* eng = sec_key.second;
         if (!eng->supportsRemote())
             continue;
 
-        nixl_reg_dlist_t s_desc = getStringDesc(eng, *seg.second);
+        nixl_reg_dlist_t s_desc = getStringDesc(eng, *m_desc);
         ret = serializer->addStr("bknd", eng->getType());
         if (ret) return ret;
         ret = s_desc.serialize(serializer);
@@ -290,45 +290,51 @@ nixl_status_t nixlLocalSection::serialize(nixlSerDes* serializer) const {
     return NIXL_SUCCESS;
 }
 
+nixl_status_t nixlLocalSection::serialize(nixlSerDes* serializer) const {
+    return serializeSections(serializer, sectionMap);
+}
+
 nixl_status_t nixlLocalSection::serializePartial(nixlSerDes* serializer,
                                                  const backend_set_t &backends,
                                                  const nixl_reg_dlist_t &mem_elms) const {
-    nixl_xfer_dlist_t trimmed = mem_elms.trim();
     nixl_mem_t nixl_mem = mem_elms.getType();
-    nixl_status_t ret;
+    nixl_status_t ret = NIXL_SUCCESS;
+    section_map_t mem_elms_to_serialize;
 
     // If there are no descriptors to serialize, just serialize empty list of sections
-    if (mem_elms.descCount() == 0) {
-        size_t seg_count = 0;
-        ret = serializer->addBuf("nixlSecElms", &seg_count, sizeof(seg_count));
-        return ret;
-    }
+    if (mem_elms.descCount() == 0)
+        return serializeSections(serializer, mem_elms_to_serialize);
 
     // TODO: consider concatenating 2 serializers instead of using mem_elms_to_serialize
-    std::vector<std::pair<nixlBackendEngine*, nixl_reg_dlist_t>> mem_elms_to_serialize;
     for (const auto &backend : backends) {
         section_key_t sec_key = std::make_pair(nixl_mem, backend);
-        if (sectionMap.count(sec_key) == 0)
+        auto it = sectionMap.find(sec_key);
+        if (it == sectionMap.end())
             continue;
 
-        nixl_meta_dlist_t resp(nixl_mem, mem_elms.isSorted());
-        ret = populate(trimmed, backend, resp);
-        if (ret) return ret;
-        mem_elms_to_serialize.emplace_back(backend, getStringDesc(backend, resp));
+        // TODO: consider section_map_t to be a map of unique_ptr or instance of nixl_meta_dlist_t.
+        //       This will avoid the need to delete the nixl_sec_dlist_t instances.
+        const nixl_meta_dlist_t *base = it->second;
+        nixl_meta_dlist_t *resp = new nixl_meta_dlist_t(nixl_mem, mem_elms.isSorted());
+        for (const auto &desc : mem_elms) {
+            int index = base->getIndex(desc);
+            if (index < 0) {
+                ret = NIXL_ERR_NOT_FOUND;
+                break;
+            }
+            resp->addDesc((*base)[index]);
+        }
+        if (ret != NIXL_SUCCESS)
+            break;
+        mem_elms_to_serialize.emplace(sec_key, resp);
     }
 
-    size_t seg_count = mem_elms_to_serialize.size();
-    ret = serializer->addBuf("nixlSecElms", &seg_count, sizeof(seg_count));
-    if (ret) return ret;
+    if (ret == NIXL_SUCCESS)
+        ret = serializeSections(serializer, mem_elms_to_serialize);
 
-    for (const auto &[backend, s_desc] : mem_elms_to_serialize) {
-        ret = serializer->addStr("bknd", backend->getType());
-        if (ret) return ret;
-        ret = s_desc.serialize(serializer);
-        if (ret) return ret;
-    }
-
-    return NIXL_SUCCESS;
+    for (auto &[sec_key, m_desc] : mem_elms_to_serialize)
+        delete m_desc;
+    return ret;
 }
 
 nixlLocalSection::~nixlLocalSection() {

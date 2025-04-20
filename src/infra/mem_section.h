@@ -30,12 +30,13 @@
 typedef std::pair<nixl_mem_t, nixlBackendEngine*>              section_key_t;
 typedef std::set<nixlBackendEngine*>                           backend_set_t;
 typedef std::unordered_map<nixl_backend_t, nixlBackendEngine*> backend_map_t;
+typedef std::map<section_key_t,   nixl_meta_dlist_t*>          section_map_t;
 
 
 class nixlMemSection {
     protected:
         std::array<backend_set_t, FILE_SEG+1>         memToBackend;
-        std::map<section_key_t,   nixl_meta_dlist_t*> sectionMap;
+        section_map_t                                 sectionMap;
 
     public:
         nixlMemSection () {};
@@ -56,6 +57,9 @@ class nixlLocalSection : public nixlMemSection {
         nixl_reg_dlist_t getStringDesc (
                                const nixlBackendEngine* backend,
                                const nixl_meta_dlist_t &d_list) const;
+
+        nixl_status_t serializeSections(nixlSerDes* serializer,
+                                        const section_map_t &sections) const;
     public:
         nixl_status_t addDescList (const nixl_reg_dlist_t &mem_elms,
                                    nixlBackendEngine* backend,
