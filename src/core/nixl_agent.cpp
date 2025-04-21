@@ -272,8 +272,8 @@ nixlAgent::registerMem(const nixl_reg_dlist_t &descs,
     for (size_t i=0; i<backend_list->size(); ++i) {
         nixlBackendEngine* backend = (*backend_list)[i];
         // meta_descs use to be passed to loadLocalData
-        nixl_meta_dlist_t meta_descs(descs.getType(), false);
-        ret = data->memorySection->addDescList(descs, backend, meta_descs);
+        nixl_sec_dlist_t sec_descs(descs.getType(), false);
+        ret = data->memorySection->addDescList(descs, backend, sec_descs);
         if (ret == NIXL_SUCCESS) {
             if (backend->supportsLocal()) {
                 if (data->remoteSections.count(data->name) == 0)
@@ -281,7 +281,7 @@ nixlAgent::registerMem(const nixl_reg_dlist_t &descs,
                           new nixlRemoteSection(data->name);
 
                 ret = data->remoteSections[data->name]->loadLocalData(
-                                                        meta_descs, backend);
+                                                        sec_descs, backend);
                 if (ret == NIXL_SUCCESS)
                     count++;
                 else
