@@ -234,7 +234,7 @@ nixl_status_t nixlLocalSection::addDescList (const nixl_reg_dlist_t &mem_elms,
 }
 
 // Per each nixlBasicDesc, the full region that got registered should be deregistered
-nixl_status_t nixlLocalSection::remDescList (const nixl_meta_dlist_t &mem_elms,
+nixl_status_t nixlLocalSection::remDescList (const nixl_reg_dlist_t &mem_elms,
                                              nixlBackendEngine *backend) {
     if (!backend)
         return NIXL_ERR_INVALID_PARAM;
@@ -245,16 +245,20 @@ nixl_status_t nixlLocalSection::remDescList (const nixl_meta_dlist_t &mem_elms,
         return NIXL_ERR_NOT_FOUND;
     nixl_meta_dlist_t *target = it->second;
 
+    // First check if the mem_elms are present in the list,
+    // don't deregister anything in case any is missing.
     for (auto & elm : mem_elms) {
         int index = target->getIndex(elm);
-        // Errorful situation, not sure helpful to deregister the rest,
-        // registering back what was deregistered is not meaningful.
-        // Can be secured by going through all the list then deregister
-        if (index<0)
-            return NIXL_ERR_UNKNOWN;
+        if (index < 0)
+            return NIXL_ERR_NOT_FOUND;
+    }
 
-        backend->deregisterMem
-            ((*(const nixl_meta_dlist_t*)target)[index].metadataP);
+    for (auto & elm : mem_elms) {
+        int index = target->getIndex(elm);
+        // Already checked, this should never happen
+        if (index < 0)
+            return NIXL_ERR_UNKNOWN;
+        backend->deregisterMem((*target)[index].metadataP);
         target->remDesc(index);
     }
 

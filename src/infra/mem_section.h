@@ -66,7 +66,7 @@ class nixlLocalSection : public nixlMemSection {
                                    nixl_meta_dlist_t &remote_self);
 
         // Each nixlBasicDesc should be same as original registration region
-        nixl_status_t remDescList (const nixl_meta_dlist_t &mem_elms,
+        nixl_status_t remDescList (const nixl_reg_dlist_t &mem_elms,
                                    nixlBackendEngine* backend);
 
         nixl_status_t serialize(nixlSerDes* serializer) const;

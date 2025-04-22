@@ -285,7 +285,7 @@ nixlAgent::registerMem(const nixl_reg_dlist_t &descs,
                 if (ret == NIXL_SUCCESS)
                     count++;
                 else
-                    data->memorySection->remDescList(meta_descs, backend);
+                    data->memorySection->remDescList(descs, backend);
             } else {
                 count++;
             }
@@ -308,7 +308,6 @@ nixlAgent::deregisterMem(const nixl_reg_dlist_t &descs,
 
     backend_set_t     backend_set;
     nixl_status_t     ret, bad_ret=NIXL_SUCCESS;
-    nixl_xfer_dlist_t trimmed = descs.trim();
 
     if (!extra_params || extra_params->backends.size() == 0) {
         backend_set_t* avail_backends;
@@ -325,15 +324,7 @@ nixlAgent::deregisterMem(const nixl_reg_dlist_t &descs,
 
     // Doing best effort, and returning err if any
     for (auto & backend : backend_set) {
-        nixl_meta_dlist_t resp(descs.getType(),
-                               descs.isSorted());
-
-        // Now just populating the metadata part, inside remDescList,
-        // getIndex is used to make sure exact match
-        ret = data->memorySection->populate(trimmed, backend, resp);
-        if (ret != NIXL_SUCCESS)
-            bad_ret = ret;
-        ret = data->memorySection->remDescList(resp, backend);
+        ret = data->memorySection->remDescList(descs, backend);
         if (ret != NIXL_SUCCESS)
             bad_ret = ret;
     }
