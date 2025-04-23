@@ -266,13 +266,13 @@ nixl_status_t partialMdTest(nixlAgent* A1, nixlAgent* A2, nixlBackendH* backend1
         assert(status == NIXL_SUCCESS);
         assert(remote_name == agent2);
 
-        // Make sure registered descriptors are updated
+        // Make sure loaded descriptors are updated
         nixlDlistH *dst_side;
         status = A1->prepXferDlist(agent2, dst_mem_lists[update].trim(), dst_side, &extra_params1);
         assert(status == NIXL_SUCCESS);
         assert(dst_side != nullptr);
 
-        // Make sure unregistered descriptors are not updated
+        // Make sure non-loaded descriptors are not updated
         for (int invalid_idx = update + 1; invalid_idx < NUM_UPDATES; invalid_idx++) {
             status = A1->prepXferDlist(agent2, dst_mem_lists[invalid_idx].trim(), dst_side, &extra_params1);
             assert(status != NIXL_SUCCESS);

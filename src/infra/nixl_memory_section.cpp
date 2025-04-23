@@ -188,6 +188,7 @@ nixl_status_t nixlLocalSection::addDescList (const nixl_reg_dlist_t &mem_elms,
         if (backend->supportsRemote()) {
             ret = backend->getPublicData(local_sec.metadataP, self_sec.metaBlob);
             if (ret != NIXL_SUCCESS) {
+                // If self MD is the same local MD, it will be by deregisterMem
                 if (backend->supportsLocal() && self_sec.metadataP != local_sec.metadataP)
                     backend->unloadMD(self_sec.metadataP);
                 backend->deregisterMem(local_sec.metadataP);
@@ -215,6 +216,7 @@ nixl_status_t nixlLocalSection::addDescList (const nixl_reg_dlist_t &mem_elms,
 
             if (backend->supportsLocal()) {
                 int self_index = remote_self.getIndex(mem_elms[j]);
+                // Should never be negative, as we just added it in previous loop
                 if (self_index >= 0 && remote_self[self_index].metadataP != (*target)[index].metadataP)
                     backend->unloadMD(remote_self[self_index].metadataP);
             }
@@ -226,7 +228,6 @@ nixl_status_t nixlLocalSection::addDescList (const nixl_reg_dlist_t &mem_elms,
     return ret;
 }
 
-// Per each nixlBasicDesc, the full region that got registered should be deregistered
 nixl_status_t nixlLocalSection::remDescList (const nixl_reg_dlist_t &mem_elms,
                                              nixlBackendEngine *backend) {
     if (!backend)
@@ -248,9 +249,7 @@ nixl_status_t nixlLocalSection::remDescList (const nixl_reg_dlist_t &mem_elms,
 
     for (auto & elm : mem_elms) {
         int index = target->getIndex(elm);
-        // Already checked, this should never happen
-        if (index < 0)
-            return NIXL_ERR_UNKNOWN;
+        // Already checked, elm should always be found. Can add a check in debug mode.
         backend->deregisterMem((*target)[index].metadataP);
         target->remDesc(index);
     }
@@ -374,7 +373,7 @@ nixl_status_t nixlRemoteSection::addDescList (
     nixl_status_t ret;
     for (int i=0; i<mem_elms.descCount(); ++i) {
         // TODO: Can add overlap checks (erroneous)
-        int idx = target->getIndex(static_cast<nixlBasicDesc>(mem_elms[i]));
+        int idx = target->getIndex(mem_elms[i]);
         if (idx < 0) {
             ret = backend->loadRemoteMD(mem_elms[i], nixl_mem, agentName, out.metadataP);
             // In case of errors, no need to remove the previous entries
