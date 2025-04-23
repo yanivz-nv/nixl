@@ -264,8 +264,9 @@ nixl_status_t nixlLocalSection::remDescList (const nixl_reg_dlist_t &mem_elms,
     return NIXL_SUCCESS;
 }
 
-nixl_status_t nixlLocalSection::serializeSections(nixlSerDes* serializer,
-                                                  const section_map_t &sections) const {
+namespace {
+nixl_status_t serializeSections(nixlSerDes* serializer,
+                                const section_map_t &sections) {
     nixl_status_t ret;
 
     size_t seg_count = sections.size();
@@ -285,6 +286,7 @@ nixl_status_t nixlLocalSection::serializeSections(nixlSerDes* serializer,
 
     return NIXL_SUCCESS;
 }
+};
 
 nixl_status_t nixlLocalSection::serialize(nixlSerDes* serializer) const {
     return serializeSections(serializer, sectionMap);

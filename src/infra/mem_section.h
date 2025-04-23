@@ -79,9 +79,6 @@ class nixlMemSection {
 
 
 class nixlLocalSection : public nixlMemSection {
-    private:
-        nixl_status_t serializeSections(nixlSerDes* serializer,
-                                        const section_map_t &sections) const;
     public:
         nixl_status_t addDescList (const nixl_reg_dlist_t &mem_elms,
                                    nixlBackendEngine* backend,
