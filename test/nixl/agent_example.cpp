@@ -221,7 +221,9 @@ nixl_status_t partialMdTest(nixlAgent* A1, nixlAgent* A2, nixlBackendH* backend1
     // Test metadata update with only backends and empty descriptor list
     std::cout << "Metadata update - backends only\n";
 
-    A1->invalidateRemoteMD(agent2); // precaution, don't care about return value
+    // Agent2 might have already been previously loaded.
+    // Invalidate it just in case but don't care either way.
+    A1->invalidateRemoteMD(agent2);
 
     nixl_reg_dlist_t empty_dlist(DRAM_SEG);
     std::string partial_meta;
@@ -272,7 +274,7 @@ nixl_status_t partialMdTest(nixlAgent* A1, nixlAgent* A2, nixlBackendH* backend1
         assert(status == NIXL_SUCCESS);
         assert(dst_side != nullptr);
 
-        // Make sure non-loaded descriptors are not updated
+        // Make sure not-loaded descriptors are not updated
         for (int invalid_idx = update + 1; invalid_idx < NUM_UPDATES; invalid_idx++) {
             status = A1->prepXferDlist(agent2, dst_mem_lists[invalid_idx].trim(), dst_side, &extra_params1);
             assert(status != NIXL_SUCCESS);

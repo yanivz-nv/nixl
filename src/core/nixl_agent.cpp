@@ -1001,7 +1001,7 @@ nixlAgent::getLocalPartialMD(nixl_reg_dlist_t &descs,
     }
 
     // First find all relevant engines and their conn info.
-    // Best effort, ignore if no conn info.
+    // Best effort, ignore if no conn info (meaning backend doesn't support remote).
     backend_set_t selected_engines;
     std::vector<typename decltype(data->connMD)::iterator> found_iters;
     for (const auto &backend : *backend_list) {

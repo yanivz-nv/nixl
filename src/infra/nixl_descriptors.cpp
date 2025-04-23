@@ -370,6 +370,7 @@ nixl_status_t nixlDescList<T>::serialize(nixlSerDes* serializer) const {
     // descriptor. std::string_view(typeid(T).name()) is compiler dependent
     if (std::is_same<nixlBasicDesc, T>::value)
         ret = serializer->addStr("nixlDList", "nixlBDList");
+    // We serialize SectionDesc the same as BlobDesc so it will be deserialized as BlobDesc on the other side
     else if (std::is_same<nixlBlobDesc, T>::value || std::is_same<nixlSectionDesc, T>::value)
         ret = serializer->addStr("nixlDList", "nixlSDList");
     else

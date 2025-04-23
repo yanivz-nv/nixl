@@ -188,7 +188,8 @@ nixl_status_t nixlLocalSection::addDescList (const nixl_reg_dlist_t &mem_elms,
         if (backend->supportsRemote()) {
             ret = backend->getPublicData(local_sec.metadataP, self_sec.metaBlob);
             if (ret != NIXL_SUCCESS) {
-                // If self MD is the same local MD, it will be by deregisterMem
+                // A backend might use the same object for both initiator/target
+                // side of a transfer, so no need for unloadMD in that case.
                 if (backend->supportsLocal() && self_sec.metadataP != local_sec.metadataP)
                     backend->unloadMD(self_sec.metadataP);
                 backend->deregisterMem(local_sec.metadataP);

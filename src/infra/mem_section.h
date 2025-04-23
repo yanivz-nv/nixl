@@ -44,6 +44,8 @@ public:
     using nixlMetaDesc::nixlMetaDesc;
 
     nixl_blob_t serialize() const {
+        // Serialize only the meta blob. metadataP is private so we don't include it.
+        // The other side will deserialize it as nixlBlobDesc.
         return nixlBasicDesc::serialize() + metaBlob;
     }
 
