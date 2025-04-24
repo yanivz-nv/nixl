@@ -52,6 +52,8 @@ class nixlMDStreamListener: public nixlMetadataStream {
         std::thread listenerThread;
         int         csock;
 
+        void            setupListener();
+        void            acceptClient();
         void            acceptClientsAsync();
         void            recvFromClients(int clientSocket);
 
@@ -59,8 +61,6 @@ class nixlMDStreamListener: public nixlMetadataStream {
         nixlMDStreamListener(int port);
         ~nixlMDStreamListener();
 
-        int         acceptClient();
-        void        setupListener();
         void        startListenerForClients();
         void        startListenerForClient();
         std::string recvFromClient();

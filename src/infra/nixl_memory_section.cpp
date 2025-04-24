@@ -283,7 +283,7 @@ nixl_status_t serializeSections(nixlSerDes* serializer,
         ret = dlist->serialize(serializer);
         if (ret) return ret;
         std::cout << "dlist: ";
-        s_desc.print();
+        dlist->print();
         std::cout << std::endl;
     }
 

@@ -32,7 +32,7 @@ nixlMetadataStream::~nixlMetadataStream() {
 
 bool nixlMetadataStream::setupStream() {
 
-    socketFd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+    socketFd = socket(AF_INET, SOCK_STREAM, 0);
     if (socketFd == -1) {
         std::cerr << "failed to create stream socket for listener";
         return false;
@@ -84,13 +84,13 @@ void nixlMDStreamListener::setupListener() {
               << port << "...\n";
 }
 
-int nixlMDStreamListener::acceptClient() {
+void nixlMDStreamListener::acceptClient() {
         csock = accept(socketFd, NULL, NULL);
-        if (csock < 0 && errno != EAGAIN) {
+        if (csock < 0) {
             std::cerr << "Cannot accept client connection\n"
                       << strerror(errno) << std::endl;
+            return;
         }
-        return csock;
 }
 
 
