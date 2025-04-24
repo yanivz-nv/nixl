@@ -316,8 +316,8 @@ public:
         while(req) {
             nixlUcxIntReq *next_req = req->unlink();
             if (req->is_complete()) {
-                _internalRequestReset(req);
                 uw->reqRelease((nixlUcxReq)req);
+                _internalRequestReset(req);
             } else {
                 /* Enqueue back */
                 append(req);
