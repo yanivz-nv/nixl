@@ -278,9 +278,7 @@ PYBIND11_MODULE(_bindings, m) {
 
     py::class_<nixlAgentConfig>(m, "nixlAgentConfig")
         //implicit constructor
-        .def(py::init<bool>())
-        .def(py::init<bool, bool>())
-        .def(py::init<bool, bool, int>());
+        .def(py::init<bool>());
 
     //note: pybind will automatically convert notif_map to python types:
     //so, a Dictionary of string: List<string>
@@ -490,9 +488,6 @@ PYBIND11_MODULE(_bindings, m) {
                     throw_nixl_exception(agent.getLocalMD(ret_str));
                     return py::bytes(ret_str);
                 })
-        .def("sendLocalMD", &nixlAgent::sendLocalMD)
-        .def("fetchRemoteMD", &nixlAgent::fetchRemoteMD)
-        .def("invalidateLocalMD", &nixlAgent::invalidateLocalMD)
         .def("loadRemoteMD", [](nixlAgent &agent, const std::string &remote_metadata) -> py::bytes {
                     //python can only interpret text strings
                     std::string remote_name("");
