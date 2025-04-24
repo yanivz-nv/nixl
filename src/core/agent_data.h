@@ -36,8 +36,6 @@ typedef enum { SOCK_SEND, SOCK_FETCH, SOCK_INVAL } nixl_comm_t;
 // 4) Metadata to send (for sendLocalMD calls)
 typedef std::tuple<nixl_comm_t, std::string, int, nixl_blob_t> nixl_comm_req_t;
 
-typedef std::pair<std::string, int> nixl_socket_peer_t;
-
 class nixlAgentData {
     private:
         std::string     name;
@@ -65,12 +63,12 @@ class nixlAgentData {
                            std::hash<std::string>, strEqual>     remoteSections;
 
         // State/methods for listener thread
-        nixlMDStreamListener               *listener;
-        std::map<nixl_socket_peer_t, int>  remoteSockets;
-        std::thread                        commThread;
-        std::vector<nixl_comm_req_t>       commQueue;
-        std::mutex                         commLock;
-        bool                               commThreadStop;
+        nixlMDStreamListener                  *listener;
+        std::unordered_map<std::string, int>  remoteSockets;
+        std::thread                           commThread;
+        std::vector<nixl_comm_req_t>          commQueue;
+        std::mutex                            commLock;
+        bool                                  commThreadStop;
 
         void commWorker(nixlAgent* myAgent);
         void enqueueCommWork(nixl_comm_req_t request);
