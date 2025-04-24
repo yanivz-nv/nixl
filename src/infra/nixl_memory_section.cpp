@@ -282,6 +282,9 @@ nixl_status_t serializeSections(nixlSerDes* serializer,
         if (ret) return ret;
         ret = dlist->serialize(serializer);
         if (ret) return ret;
+        std::cout << "dlist: ";
+        s_desc.print();
+        std::cout << std::endl;
     }
 
     return NIXL_SUCCESS;
@@ -410,6 +413,9 @@ nixl_status_t nixlRemoteSection::loadRemoteData (nixlSerDes* deserializer,
         if (nixl_backend.size()==0)
             return NIXL_ERR_INVALID_PARAM;
         nixl_reg_dlist_t s_desc(deserializer);
+        std::cout << "dlist: ";
+        s_desc.print();
+        std::cout << std::endl;
         if (s_desc.descCount()==0) // can be used for entry removal in future
             return NIXL_ERR_NOT_FOUND;
         if (backendToEngineMap.count(nixl_backend) != 0) {

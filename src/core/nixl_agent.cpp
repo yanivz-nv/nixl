@@ -960,6 +960,11 @@ nixlAgent::getLocalMD (nixl_blob_t &str) const {
         ret = sd.addStr("c", c.second);
         if(ret)
             return ret;
+        std::cout << "LocalConnInfo: " << std::hex;
+        for (size_t i = 0; i < c.second.size(); i++) {
+            std::cout << (static_cast<int>(c.second.c_str()[i]) & 0xff) << "-";
+        }
+        std::cout << std::dec << std::endl;
     }
 
     ret = sd.addStr("", "MemSection");
@@ -970,6 +975,7 @@ nixlAgent::getLocalMD (nixl_blob_t &str) const {
     if(ret)
         return ret;
 
+    std::cout << "getLocalMD: " << sd.exportStr() << std::endl;
     str = sd.exportStr();
     return NIXL_SUCCESS;
 }
@@ -1110,6 +1116,8 @@ nixlAgent::loadRemoteMD (const nixl_blob_t &remote_metadata,
     nixl_backend_t nixl_backend;
     nixlBackendEngine* eng;
     nixl_status_t ret;
+
+    std::cout << "loadRemoteMD: " << remote_metadata << std::endl;
 
     ret = sd.importStr(remote_metadata);
     if(ret)
