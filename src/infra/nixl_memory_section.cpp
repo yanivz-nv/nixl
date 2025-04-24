@@ -186,7 +186,7 @@ nixl_status_t nixlLocalSection::addDescList (const nixl_reg_dlist_t &mem_elms,
             }
         }
         if (backend->supportsRemote()) {
-            ret = backend->getPublicData(local_sec.metadataP, self_sec.metaBlob);
+            ret = backend->getPublicData(local_sec.metadataP, local_sec.metaBlob);
             if (ret != NIXL_SUCCESS) {
                 // A backend might use the same object for both initiator/target
                 // side of a transfer, so no need for unloadMD in that case.
