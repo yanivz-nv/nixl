@@ -23,6 +23,7 @@
 #include <array>
 #include <string>
 #include <set>
+#include <memory>
 #include "nixl_descriptors.h"
 #include "nixl.h"
 #include "backend/backend_engine.h"
@@ -59,7 +60,7 @@ public:
 };
 
 using nixl_sec_dlist_t = nixlDescList<nixlSectionDesc>;
-using section_map_t = std::map<section_key_t, nixl_sec_dlist_t*>;
+using section_map_t = std::map<section_key_t, std::unique_ptr<nixl_sec_dlist_t>>;
 
 class nixlMemSection {
     protected:
