@@ -23,6 +23,7 @@
 #include <array>
 #include <string>
 #include <set>
+#include <memory>
 #include "nixl_descriptors.h"
 #include "nixl.h"
 #include "backend/backend_engine.h"
@@ -58,8 +59,8 @@ public:
     }
 };
 
-typedef nixlDescList<nixlSectionDesc>               nixl_sec_dlist_t;
-typedef std::map<section_key_t, nixl_sec_dlist_t*>  section_map_t;
+typedef nixlDescList<nixlSectionDesc>                              nixl_sec_dlist_t;
+typedef std::map<section_key_t, std::unique_ptr<nixl_sec_dlist_t>> section_map_t;
 
 class nixlMemSection {
     protected:
