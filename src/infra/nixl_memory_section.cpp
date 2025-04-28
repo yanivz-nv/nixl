@@ -312,9 +312,10 @@ nixl_status_t nixlLocalSection::serializePartial(nixlSerDes* serializer,
         auto resp = std::make_unique<nixl_sec_dlist_t>(nixl_mem, mem_elms.isSorted());
         for (const auto &desc : mem_elms) {
             int index = base->getIndex(desc);
+            // TODO: for unload we can maybe add flag to just skip if not found?
             if (index < 0)
                 return NIXL_ERR_NOT_FOUND;
-
+            // TODO: do not include metaBlob in case of unload?
             resp->addDesc((*base)[index]);
         }
         mem_elms_to_serialize.emplace(sec_key, std::move(resp));
@@ -405,6 +406,80 @@ nixl_status_t nixlRemoteSection::loadRemoteData (nixlSerDes* deserializer,
         }
     }
     return NIXL_SUCCESS;
+}
+
+nixl_status_t nixlRemoteSection::remDescList (
+                                 const nixl_reg_dlist_t& mem_elms,
+                                 nixlBackendEngine* backend) {
+    if (!backend->supportsRemote())
+        return NIXL_ERR_UNKNOWN;
+
+    nixl_mem_t nixl_mem   = mem_elms.getType();
+    section_key_t sec_key = std::make_pair(nixl_mem, backend);
+    auto it = sectionMap.find(sec_key);
+    // If no descriptors to remove, just return success
+    if (it == sectionMap.end())
+        return NIXL_SUCCESS;
+    auto &target = it->second;
+
+    for (int i = 0; i < mem_elms.descCount(); ++i) {
+        int idx = target->getIndex(static_cast<nixlBasicDesc>(mem_elms[i]));
+        if (idx >= 0) {
+            nixlMetaDesc &m_desc = (*target)[idx];
+            backend->unloadMD(m_desc.metadataP);
+            target->remDesc(idx);
+        }
+    }
+
+    // If the target meta_dlist is empty, remove it from remote section
+    if (target->descCount() == 0) {
+        sectionMap.erase(sec_key);
+        memToBackend[nixl_mem].erase(backend);
+    }
+    return NIXL_SUCCESS;
+}
+
+nixl_status_t nixlRemoteSection::unloadRemoteData (nixlSerDes* deserializer,
+                                                   backend_map_t &backendToEngineMap) {
+    nixl_backend_t nixl_backend;
+    nixl_status_t ret;
+    size_t seg_count;
+
+    ret = deserializer->getBuf("nixlSecElms", &seg_count, sizeof(seg_count));
+    if (ret) return ret;
+
+    // First check sections are ok before removing them
+    std::vector<nixl_reg_dlist_t> s_desc_vec;
+    s_desc_vec.reserve(seg_count);
+    for (size_t i = 0; i < seg_count; ++i) {
+        nixl_backend = deserializer->getStr("bknd");
+        if (nixl_backend.size() == 0)
+            return NIXL_ERR_MISMATCH;
+        nixl_reg_dlist_t s_desc(deserializer);
+        if (s_desc.descCount() == 0)
+            continue;
+        if (backendToEngineMap.count(nixl_backend) == 0)
+            continue;
+
+        s_desc_vec.push_back(std::move(s_desc));
+    }
+
+    // Now remove the sections
+    for (size_t i = 0; i < seg_count; ++i) {
+        ret = remDescList(s_desc_vec[i], backendToEngineMap[nixl_backend]);
+        if (ret) return ret; // Should not happen
+    }
+
+    return NIXL_SUCCESS;
+}
+
+void nixlRemoteSection::unloadBackend (nixlBackendEngine* backend) {
+    for (size_t i = 0; i < memToBackend.size(); ++i) {
+        section_key_t sec_key = std::make_pair(nixl_mem_t(i), backend);
+        auto it = sectionMap.find(sec_key);
+        if (it != sectionMap.end())
+            sectionMap.erase(it);
+    }
 }
 
 nixl_status_t nixlRemoteSection::loadLocalData (

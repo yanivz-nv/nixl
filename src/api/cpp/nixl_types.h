@@ -45,6 +45,12 @@ typedef enum {DRAM_SEG, VRAM_SEG, BLK_SEG, OBJ_SEG, FILE_SEG} nixl_mem_t;
 typedef enum {NIXL_READ, NIXL_WRITE} nixl_xfer_op_t;
 
 /**
+ * @enum   nixl_md_op_t
+ * @brief  An enumeration of different metadata handling operation types for NIXL
+ */
+typedef enum {NIXL_MD_OP_LOAD, NIXL_MD_OP_UNLOAD} nixl_md_op_t;
+
+/**
  * @enum   nixl_status_t
  * @brief  An enumeration of status values and error codes for NIXL
  */
