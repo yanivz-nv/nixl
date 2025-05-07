@@ -172,6 +172,30 @@ int main() {
     std::cout << "\nEtcd Metadata Exchange Demo\n";
     std::cout << "==========================\n";
 
+    std::cout << "\n00. Fetching remote conn_info from etcd...\n";
+    status = A1.fetchRemoteMD("");
+    assert(status == NIXL_SUCCESS);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    status = A2.fetchRemoteMD("");
+    assert(status == NIXL_SUCCESS);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    // Give etcd time to process
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    std::cout << "\n0. Sending local conn_info to etcd...\n";
+
+    nixl_reg_dlist_t empty_dlist(DRAM_SEG);
+    status = A1.sendLocalPartialMD(empty_dlist, nullptr);
+    assert (status == NIXL_SUCCESS);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    status = A2.sendLocalPartialMD(empty_dlist, nullptr);
+    assert (status == NIXL_SUCCESS);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    // Give etcd time to process
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
     // 1. Send Local Metadata to etcd
     std::cout << "\n1. Sending local metadata to etcd...\n";
 
@@ -226,6 +250,7 @@ int main() {
     extra_params1.notifMsg = "notification";
     extra_params1.hasNotif = true;
     ret1 = A1.createXferReq(NIXL_WRITE, req_src_descs, req_dst_descs, AGENT2_NAME, req_handle, &extra_params1);
+    assert(ret1 == NIXL_SUCCESS);
     std::cout << "Xfer request created, status: " << nixlEnumStrings::statusStr(ret1) << std::endl;
 
     status = A1.postXferReq(req_handle);
@@ -274,6 +299,8 @@ int main() {
 
     status = A2.sendLocalPartialMD(empty_dlist2, &conn_params2);
     assert(status == NIXL_SUCCESS);
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
 
     // 4. Invalidate Metadata
     std::cout << "\n4. Invalidating metadata in etcd...\n";

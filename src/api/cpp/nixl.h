@@ -449,6 +449,14 @@ class nixlAgent {
         checkRemoteMD (const std::string remote_name,
                        const nixl_xfer_dlist_t &descs) const;
 
+        /**
+         * @brief  Get the name of the agent.
+         *
+         * @return const std::string& The name of the agent
+         */
+        const std::string&
+        getName() const;
+
 };
 
 #endif

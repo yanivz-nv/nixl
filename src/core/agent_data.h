@@ -29,7 +29,7 @@ namespace etcd {
     class Client;
 }
 
-#define NIXL_ETCD_NAMESPACE_DEFAULT "/nixl/agents/"
+#define NIXL_ETCD_NAMESPACE_DEFAULT "/nixl/agents"
 #endif // HAVE_ETCD
 
 using backend_list_t = std::vector<nixlBackendEngine*>;

@@ -24,6 +24,7 @@
 #include "common/nixl_log.h"
 #if HAVE_ETCD
 #include <etcd/Client.hpp>
+#include <etcd/Watcher.hpp>
 #endif // HAVE_ETCD
 
 int connectToIP(std::string ip_addr, int port) {
@@ -97,7 +98,7 @@ static std::string makeEtcdKey(const std::string& agent_name,
                                 const std::string& namespace_prefix,
                                 const std::string& metadata_type) {
     std::stringstream ss;
-    ss << namespace_prefix << "/" << agent_name << "/" << metadata_type;
+    ss << namespace_prefix << "/" << metadata_type << "/" << agent_name;
     return ss.str();
 }
 
@@ -187,6 +188,7 @@ static nixl_status_t fetchMetadataFromEtcd(const std::string& agent_name,
         if (invalid_check.is_ok()) {
             // Key is marked as invalid, delete both keys
             NIXL_INFO << "Key " << metadata_key << " is marked as invalid, removing";
+            //TODO: fix the invalid key after the makeEtcdKey was changed
             removeMetadataFromEtcd(agent_name, namespace_prefix, client, "metadata.invalid");
             removeMetadataFromEtcd(agent_name, namespace_prefix, client, metadata_type);
             return NIXL_ERR_INVALID_PARAM;
@@ -207,6 +209,88 @@ static nixl_status_t fetchMetadataFromEtcd(const std::string& agent_name,
         NIXL_ERROR << "Error fetching " << metadata_type << " from etcd: " << e.what() << std::endl;
         return NIXL_ERR_UNKNOWN;
     }
+}
+
+static void loadSingleAgentFromEtcd(nixlAgent &my_agent,
+                                    const std::string& agent_name,
+                                    const nixl_blob_t& md) {
+    if (agent_name == my_agent.getName()) {
+        NIXL_DEBUG << "loadSingleAgentFromEtcd: Skipping self";
+        return;
+    }
+    std::string remote_agent;
+    nixl_status_t ret = my_agent.loadRemoteMD(md, remote_agent);
+    if (ret != NIXL_SUCCESS)
+        NIXL_ERROR << "Failed to load remote agent " << agent_name << " metadata: " << ret;
+    else if (remote_agent != agent_name)
+        NIXL_ERROR << "Remote agent metadata name mismatch for " << agent_name << ": " << remote_agent;
+}
+
+static nixl_status_t fetchAgentsFromEtcd(nixlAgent &my_agent,
+                                         const std::string& namespace_prefix,
+                                         std::unique_ptr<etcd::Client>& client,
+                                         std::unique_ptr<etcd::Watcher>& watcher) {
+    std::vector<nixl_blob_t> md_vec;
+    std::string metadata_key = namespace_prefix + "/conn_info/";
+
+    // Lambda to process etcd watcher events
+    auto process_response = [&my_agent, metadata_key](etcd::Response response) -> void {
+        if (!response.is_ok()) {
+            NIXL_ERROR << "Watcher failed to fetch agents from etcd: " << response.error_message();
+            return;
+        }
+        NIXL_DEBUG << "Watcher received " << response.events().size() << " events from etcd";
+        for (size_t i = 0; i < response.events().size(); ++i) {
+            const auto &event = response.events()[i];
+            if (event.event_type() == etcd::Event::EventType::PUT) {
+                const std::string agent_name = event.kv().key().substr(metadata_key.length());
+                const nixl_blob_t &md = event.kv().as_string();
+
+                NIXL_DEBUG << "PUT: " << event.kv().key() << " (rev " << event.kv().modified_index() << ") = " << md;
+
+                loadSingleAgentFromEtcd(my_agent, agent_name, md);
+
+            } else if (event.event_type() == etcd::Event::EventType::DELETE_) {
+                const std::string agent_name = event.kv().key().substr(metadata_key.length());
+                NIXL_DEBUG << "DELETE: " << event.kv().key() << " (rev " << event.kv().modified_index() << ")";
+
+                if (agent_name == my_agent.getName()) {
+                    NIXL_DEBUG << "Skipping self in watcher delete event";
+                    continue;
+                }
+
+                nixl_status_t ret = my_agent.invalidateRemoteMD(agent_name);
+                if (ret != NIXL_SUCCESS)
+                    NIXL_ERROR << "Failed to invalidate remote metadata for agent: " << agent_name << " " << ret;
+                else
+                    NIXL_DEBUG << "Successfully invalidated remote metadata for agent: " << agent_name;
+            }
+        }
+    };
+
+    if (!watcher) {
+        int64_t fromIndex = 0;
+        watcher = std::make_unique<etcd::Watcher>(*client, metadata_key, fromIndex, process_response, true);
+        NIXL_DEBUG << "Created watcher for " << metadata_key << " with revision " << fromIndex;
+    }
+
+    // To make sure we didn't miss existing agents with the watcher we list all current agents
+    etcd::Response response = client->ls(metadata_key).get();
+    if (!response.is_ok()) {
+        NIXL_ERROR << "Failed to list agents from etcd: " << response.error_message();
+        return NIXL_ERR_NOT_FOUND;
+    }
+
+    NIXL_DEBUG << "Fetched " << response.values().size() << " agents from etcd";
+
+    for (const auto& value : response.values()) {
+        const std::string agent_name = value.key().substr(metadata_key.length());
+        const nixl_blob_t &md = value.as_string();
+        NIXL_DEBUG << "Agent: " << value.key() << " (rev " << value.modified_index() << ") = " << md;
+        loadSingleAgentFromEtcd(my_agent, agent_name, md);
+    }
+
+    return NIXL_SUCCESS;
 }
 
 // Create etcd client with specified endpoints or from environment variable
@@ -230,6 +314,7 @@ void nixlAgentData::commWorker(nixlAgent* myAgent){
 
 #if HAVE_ETCD
         auto etcdclient = std::unique_ptr<etcd::Client>(nullptr);
+        std::unique_ptr<etcd::Watcher> watcher = nullptr;
         std::string etcd_endpoints;
         std::string namespace_prefix;
 
@@ -351,12 +436,7 @@ void nixlAgentData::commWorker(nixlAgent* myAgent){
                         throw std::runtime_error("ETCD is not enabled");
                     }
 
-                    // Parse request parameters
-                    std::string metadata_type = "metadata";
-
-                    if (req_ip.find("/partial_metadata") != std::string::npos) {
-                        metadata_type = "partial_metadata";
-                    }
+                    const auto &metadata_type = req_ip;
 
                     // Use local storeMetadataInEtcd function
                     nixl_status_t ret = storeMetadataInEtcd(name, namespace_prefix, etcdclient, metadata_type, my_MD);
@@ -369,6 +449,12 @@ void nixlAgentData::commWorker(nixlAgent* myAgent){
                 {
                     if (!useEtcd) {
                         throw std::runtime_error("ETCD is not enabled");
+                    }
+
+                    // If agent_name is empty, fetch all agents from etcd
+                    if (req_ip.empty()) {
+                        fetchAgentsFromEtcd(*myAgent, namespace_prefix, etcdclient, watcher);
+                        break;
                     }
 
                     // First try a direct get
@@ -459,6 +545,14 @@ void nixlAgentData::commWorker(nixlAgent* myAgent){
                             } else {
                                 NIXL_ERROR << "Warning: Failed to mark partial metadata as invalid: " << response2.error_message() << std::endl;
                             }
+                        }
+
+                        std::string conn_info_key = makeEtcdKey(agent, namespace_prefix, "conn_info");
+                        etcd::Response conn_info_response = etcdclient->rm(conn_info_key).get();
+                        if (conn_info_response.is_ok()) {
+                            NIXL_DEBUG << "Successfully removed conn_info for agent: " << agent;
+                        } else {
+                            NIXL_ERROR << "Warning: Failed to remove conn_info: " << conn_info_response.error_message();
                         }
                     } catch (const std::exception& e) {
                         NIXL_ERROR << "Error marking metadata as invalid: " << e.what() << std::endl;
