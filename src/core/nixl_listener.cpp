@@ -24,6 +24,7 @@
 #include "common/nixl_log.h"
 #if HAVE_ETCD
 #include <etcd/Client.hpp>
+#include <etcd/Watcher.hpp>
 #endif // HAVE_ETCD
 
 const std::string default_metadata_label = "metadata";
@@ -103,6 +104,10 @@ class nixlEtcdClient {
 private:
     std::unique_ptr<etcd::Client> etcd;
     std::string namespace_prefix;
+    std::vector<std::string> invalidated_agents;
+    std::mutex invalidated_agents_mutex;
+    std::unordered_map<std::string, std::unique_ptr<etcd::Watcher>,
+                        std::hash<std::string>, strEqual> agentWatchers;
 
     // Helper function to create etcd key
     std::string makeKey(const std::string& agent_name,
@@ -113,7 +118,7 @@ private:
     }
 
 public:
-    nixlEtcdClient() {
+    nixlEtcdClient(const std::string& my_agent_name) {
         const char* etcd_endpoints = std::getenv("NIXL_ETCD_ENDPOINTS");
         // Sanity check
         if (!etcd_endpoints || strlen(etcd_endpoints) == 0) {
@@ -133,6 +138,14 @@ public:
         namespace_prefix = etcd_namespace ? etcd_namespace : NIXL_ETCD_NAMESPACE_DEFAULT;
 
         NIXL_DEBUG << "Using etcd namespace for agents: " << namespace_prefix;
+
+        // Store agent's prefix key in etcd
+        std::string agent_prefix = makeKey(my_agent_name, "");
+        etcd::Response response = etcd->put(agent_prefix, "").get();
+        if (!response.is_ok()) {
+            throw std::runtime_error("Failed to store agent " + my_agent_name +
+                                     " prefix key in etcd: " + response.error_message());
+        }
     }
 
     // Store metadata in etcd
@@ -209,17 +222,6 @@ public:
         // Create key for agent's metadata
         std::string metadata_key = makeKey(agent_name, metadata_type);
         try {
-            // First check if the key is marked as invalid
-            std::string invalid_key = makeKey(agent_name, invalid_label);
-            etcd::Response invalid_check = etcd->get(invalid_key).get();
-
-            if (invalid_check.is_ok()) {
-                // Key is marked as invalid, delete both keys
-                NIXL_INFO << "Agent " << agent_name << " is marked as invalid, removing all keys";
-                removeMetadataFromEtcd(agent_name);
-                return NIXL_ERR_INVALID_PARAM;
-            }
-
             // Fetch metadata from etcd
             etcd::Response response = etcd->get(metadata_key).get();
 
@@ -280,40 +282,57 @@ public:
         return NIXL_ERR_UNKNOWN;
     }
 
-    // Mark agent's metadata as invalid in etcd
-    nixl_status_t invalidateMetadataInEtcd(const std::string& agent_name) {
-        // Check if etcd client is available
-        if (!etcd) {
-            NIXL_ERROR << "ETCD client not available";
-            return NIXL_ERR_NOT_SUPPORTED;
+    // Setup a watcher for an agent's metadata invalidation if it doesn't already exist
+    void setupAgentWatcher(const std::string &agent_name) {
+        if (agentWatchers.find(agent_name) != agentWatchers.end()) {
+            return;
         }
 
-        try {
-            // Mark agent's metadata as invalid instead of removing it
-            std::string agent_prefix = makeKey(agent_name, "");
-            std::string invalid_key = makeKey(agent_name, invalid_label);
-
-            // Check if the agent has any keys in etcd first. 1 key is enough to confirm.
-            etcd::Response check_response = etcd->keys(agent_prefix, 1).get();
-            if (check_response.is_ok() && check_response.keys().size() > 0) {
-                // Mark the agent's metadata as invalid by creating an invalid marker
-                etcd::Response response1 = etcd->put(invalid_key, "invalid").get();
-                if (response1.is_ok()) {
-                    NIXL_DEBUG << "Successfully marked metadata as invalid for agent: " << agent_name;
-                    return NIXL_SUCCESS;
-                } else {
-                    NIXL_ERROR << "Warning: Failed to mark metadata as invalid for agent: "
-                               << agent_name << " : " << response1.error_message();
-                    return NIXL_ERR_BACKEND;
-                }
-            } else {
-                NIXL_DEBUG << "Agent " << agent_name << " has no keys in etcd, skipping invalidation";
-                return NIXL_SUCCESS;
+        // Lambda to process etcd watcher events of a remote agent.
+        // DELETE events are enqueued to be deleted in commWorker (can't be done inside the Watcher callback)
+        auto process_response = [this, agent_name](etcd::Response response) -> void {
+            if (!response.is_ok()) {
+                NIXL_ERROR << "Watcher failed to watch agent " << agent_name << " from etcd: " << response.error_message();
+                return;
             }
-        } catch (const std::exception& e) {
-            NIXL_ERROR << "Error marking metadata as invalid for agent: "
-                       << agent_name << " : " << e.what();
-            return NIXL_ERR_BACKEND;
+            NIXL_DEBUG << "Watcher received " << response.events().size() << " events from etcd";
+            if (response.events().size() != 1) {
+                NIXL_ERROR << "Watcher agent " << agent_name << " received unexpected number of events from etcd: "
+                        << response.events().size();
+                return;
+            }
+            const auto &event = response.events()[0];
+            if (event.event_type() == etcd::Event::EventType::PUT) {
+                NIXL_ERROR << "Unexpected PUT: " << event.kv().key()
+                        << " (rev " << event.kv().modified_index() << ") = " << event.kv().as_string();
+
+            } else if (event.event_type() == etcd::Event::EventType::DELETE_) {
+                NIXL_DEBUG << "DELETE: " << event.kv().key() << " (rev " << event.kv().modified_index() << ")";
+                std::lock_guard<std::mutex> lock(invalidated_agents_mutex);
+                invalidated_agents.push_back(agent_name);
+            }
+        };
+
+        std::string agent_prefix = makeKey(agent_name, "");
+        agentWatchers[agent_name] = std::make_unique<etcd::Watcher>(*etcd, agent_prefix, process_response);
+    }
+
+    // Process invalidated agents from watchers
+    void processInvalidatedAgents(nixlAgent* my_agent) {
+        // Check for invalidated agents
+        std::vector<std::string> tmp_invalidated_agents;
+        {
+            std::lock_guard<std::mutex> lock(invalidated_agents_mutex);
+            tmp_invalidated_agents = std::move(invalidated_agents);
+        }
+        for (const auto &agent : tmp_invalidated_agents) {
+            NIXL_DEBUG << "Invalidated agent: " << agent;
+            agentWatchers.erase(agent);
+            nixl_status_t ret = my_agent->invalidateRemoteMD(agent);
+            if (ret != NIXL_SUCCESS)
+                NIXL_ERROR << "Failed to invalidate remote metadata for agent: " << agent << ": " << ret;
+            else
+                NIXL_DEBUG << "Successfully invalidated remote metadata for agent: " << agent;
         }
     }
 };
@@ -327,7 +346,7 @@ void nixlAgentData::commWorker(nixlAgent* myAgent){
     std::unique_ptr<nixlEtcdClient> etcdClient = nullptr;
     // useEtcd is set in nixlAgent constructor and is true if NIXL_ETCD_ENDPOINTS is set
     if(useEtcd) {
-        etcdClient = std::make_unique<nixlEtcdClient>();
+        etcdClient = std::make_unique<nixlEtcdClient>(name);
     }
 #endif // HAVE_ETCD
 
@@ -470,6 +489,7 @@ void nixlAgentData::commWorker(nixlAgent* myAgent){
                     }
                     NIXL_DEBUG << "Successfully loaded metadata for agent: " << remote_agent;
 
+                    etcdClient->setupAgentWatcher(remote_agent);
                     break;
                 }
                 case ETCD_INVAL:
@@ -478,7 +498,7 @@ void nixlAgentData::commWorker(nixlAgent* myAgent){
                         throw std::runtime_error("ETCD is not enabled");
                     }
 
-                    nixl_status_t ret = etcdClient->invalidateMetadataInEtcd(name);
+                    nixl_status_t ret = etcdClient->removeMetadataFromEtcd(name);
                     if (ret != NIXL_SUCCESS) {
                         NIXL_ERROR << "Failed to invalidate metadata in etcd: " << ret;
                     }
@@ -540,6 +560,13 @@ void nixlAgentData::commWorker(nixlAgent* myAgent){
 
             socket_iter++;
         }
+
+#if HAVE_ETCD
+        if (etcdClient) {
+            // Process invalidated agents from watchers
+            etcdClient->processInvalidatedAgents(myAgent);
+        }
+#endif // HAVE_ETCD
 
         nixlTime::us_t start = nixlTime::getUs();
         while( (start + config.lthrDelay) > nixlTime::getUs()) {
