@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 #include <gtest/gtest.h>
+#include <thread>
 #include "nixl.h"
 #include "common.h"
 
@@ -58,6 +59,7 @@ class MetadataExchangeTestFixture : public testing::Test {
     struct AgentContext {
         std::unique_ptr<nixlAgent> agent;
         const std::string name;
+        const std::string ip = "127.0.0.1";
         const int port;
         nixlBackendH *backend_handle = nullptr;
         std::vector<MemBuffer> buffers;
@@ -293,6 +295,169 @@ TEST_F(MetadataExchangeTestFixture, GetLocalPartialWithErrors)
     // Change the metadata before loading
     md[100] += 1;
     ASSERT_NE(dst.agent->loadRemoteMD(md, remote_name), NIXL_SUCCESS);
+}
+
+TEST_F(MetadataExchangeTestFixture, SocketSendLocalAndInvalidateLocal)
+{
+    for (size_t i = 0; i < agents_.size(); i++)
+        agents_[i].createAgentBackend();
+
+    size_t count = (std::rand() % 10) + 2;
+    size_t size = (std::rand() % 1024) + 1;
+    for (size_t i = 0; i < agents_.size(); i++)
+        agents_[i].initAndRegisterBuffers(count, size);
+
+    auto &src = agents_[0];
+    auto &dst = agents_[1];
+
+    auto sleep_time = std::chrono::milliseconds(500);
+    nixl_blob_t md;
+
+    nixl_opt_args_t send_args;
+    send_args.ipAddr = dst.ip;
+    send_args.port = dst.port;
+
+    ASSERT_EQ(src.agent->sendLocalMD(&send_args), NIXL_SUCCESS);
+
+    std::this_thread::sleep_for(sleep_time);
+
+    ASSERT_EQ(dst.agent->checkRemoteMD(src.name, {DRAM_SEG}), NIXL_SUCCESS);
+
+    ASSERT_EQ(src.agent->invalidateLocalMD(&send_args), NIXL_SUCCESS);
+
+    // Send to invalid IP address, should not block the test
+    send_args.ipAddr = "10.10.10.10";
+    send_args.port = 1234;
+    ASSERT_EQ(src.agent->sendLocalMD(&send_args), NIXL_SUCCESS);
+
+    std::this_thread::sleep_for(sleep_time);
+
+    ASSERT_EQ(dst.agent->checkRemoteMD(src.name, {DRAM_SEG}), NIXL_ERR_NOT_FOUND);
+}
+
+TEST_F(MetadataExchangeTestFixture, SocketFetchRemoteAndInvalidateLocal)
+{
+    for (size_t i = 0; i < agents_.size(); i++)
+        agents_[i].createAgentBackend();
+
+    size_t count = (std::rand() % 10) + 2;
+    size_t size = (std::rand() % 1024) + 1;
+    for (size_t i = 0; i < agents_.size(); i++)
+        agents_[i].initAndRegisterBuffers(count, size);
+
+    auto &src = agents_[0];
+    auto &dst = agents_[1];
+
+    auto sleep_time = std::chrono::milliseconds(500);
+    nixl_blob_t md;
+
+    nixl_opt_args_t fetch_args;
+    fetch_args.ipAddr = src.ip;
+    fetch_args.port = src.port;
+
+    ASSERT_EQ(dst.agent->fetchRemoteMD(src.name, &fetch_args), NIXL_SUCCESS);
+
+    std::this_thread::sleep_for(sleep_time);
+
+    ASSERT_EQ(dst.agent->checkRemoteMD(src.name, {DRAM_SEG}), NIXL_SUCCESS);
+}
+
+TEST_F(MetadataExchangeTestFixture, SocketSendPartialLocal)
+{
+    for (size_t i = 0; i < agents_.size(); i++)
+        agents_[i].createAgentBackend();
+
+    size_t count = (std::rand() % 10) + 2;
+    size_t size = (std::rand() % 1024) + 1;
+    for (size_t i = 0; i < agents_.size(); i++)
+        agents_[i].initAndRegisterBuffers(count, size);
+
+    auto &src = agents_[0];
+    auto &dst = agents_[1];
+
+    auto sleep_time = std::chrono::milliseconds(500);
+    nixl_blob_t md;
+
+    nixl_opt_args_t send_args;
+    send_args.ipAddr = dst.ip;
+    send_args.port = dst.port;
+
+    // Step 1: Get and load connection info
+
+    ASSERT_EQ(src.agent->sendLocalPartialMD({DRAM_SEG}, &send_args), NIXL_SUCCESS);
+
+    std::this_thread::sleep_for(sleep_time);
+
+    ASSERT_EQ(dst.agent->checkRemoteMD(src.name, {DRAM_SEG}), NIXL_SUCCESS);
+
+    // Step 2: Get partial metadata for agent 0 buffers except the last one
+
+    nixl_reg_dlist_t valid_descs(DRAM_SEG);
+    for (size_t i = 0; i < src.buffers.size() - 1; i++) {
+        valid_descs.addDesc(src.buffers[i].getBlobDesc());
+    }
+    nixl_reg_dlist_t invalid_descs(DRAM_SEG);
+    invalid_descs.addDesc(src.buffers.back().getBlobDesc());
+
+    ASSERT_EQ(src.agent->sendLocalPartialMD(valid_descs, &send_args), NIXL_SUCCESS);
+
+    std::this_thread::sleep_for(sleep_time);
+
+    ASSERT_EQ(dst.agent->checkRemoteMD(src.name, valid_descs.trim()), NIXL_SUCCESS);
+
+    ASSERT_EQ(dst.agent->checkRemoteMD(src.name, invalid_descs.trim()), NIXL_ERR_NOT_FOUND);
+
+    ASSERT_EQ(src.agent->invalidateLocalMD(&send_args), NIXL_SUCCESS);
+
+    std::this_thread::sleep_for(sleep_time);
+
+    // Step 3: Get and load again but with additional extra params
+
+    send_args.backends.push_back(src.backend_handle);
+    send_args.includeConnInfo = true;
+
+    ASSERT_EQ(src.agent->sendLocalPartialMD(valid_descs, &send_args), NIXL_SUCCESS);
+
+    std::this_thread::sleep_for(sleep_time);
+
+    ASSERT_EQ(dst.agent->checkRemoteMD(src.name, valid_descs.trim()), NIXL_SUCCESS);
+
+    ASSERT_EQ(dst.agent->checkRemoteMD(src.name, invalid_descs.trim()), NIXL_ERR_NOT_FOUND);
+}
+
+TEST_F(MetadataExchangeTestFixture, SocketSendLocalPartialWithErrors)
+{
+    auto &src = agents_[0];
+    auto &dst = agents_[1];
+
+    src.createAgentBackend();
+
+    size_t count = (std::rand() % 10) + 1;
+    size_t size = (std::rand() % 1024) + 1;
+    src.initAndRegisterBuffers(count, size);
+
+    auto sleep_time = std::chrono::milliseconds(500);
+    nixl_blob_t md;
+
+    nixl_opt_args_t send_args;
+    send_args.ipAddr = dst.ip;
+    send_args.port = dst.port;
+
+    // Case 1: Use unregistered descriptors
+    MemBuffer unregistered_buffer(1024);
+    nixl_reg_dlist_t unregistered_descs(DRAM_SEG);
+    unregistered_descs.addDesc(unregistered_buffer.getBlobDesc());
+
+    ASSERT_NE(src.agent->sendLocalPartialMD(unregistered_descs, &send_args), NIXL_SUCCESS);
+
+    // Case 2: Attempt to load connection info on agent without backend
+
+    ASSERT_EQ(src.agent->sendLocalPartialMD({DRAM_SEG}, &send_args), NIXL_SUCCESS);
+
+    std::this_thread::sleep_for(sleep_time);
+
+    // Agent 1 has no backend
+    ASSERT_NE(dst.agent->checkRemoteMD(src.name, {DRAM_SEG}), NIXL_SUCCESS);
 }
 
 } // namespace metadata_exchange
