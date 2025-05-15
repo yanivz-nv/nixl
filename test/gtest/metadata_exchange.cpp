@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 #include <gtest/gtest.h>
+#include <thread>
 #include "nixl.h"
 #include "common.h"
 
@@ -86,6 +87,7 @@ class MetadataExchangeTestFixture : public testing::Test {
     struct AgentContext {
         std::unique_ptr<nixlAgent> agent;
         const std::string name;
+        const std::string ip = "127.0.0.1";
         const int port;
         nixlBackendH *backend_handle = nullptr;
         std::vector<MemBuffer> buffers;
@@ -345,6 +347,201 @@ TEST_F(MetadataExchangeTestFixture, GetLocalPartialWithErrors)
     // Agent 1 has no backend
     status = dst.agent->loadRemoteMD(md, remote_name);
     ASSERT_NE(status, NIXL_SUCCESS);
+}
+
+TEST_F(MetadataExchangeTestFixture, SocketSendLocalAndInvalidateLocal)
+{
+    for (size_t i = 0; i < agents.size(); i++)
+        agents[i].createAgentBackend();
+
+    size_t count = (std::rand() % 10) + 2;
+    size_t size = (std::rand() % 1024) + 1;
+    for (size_t i = 0; i < agents.size(); i++)
+        agents[i].initAndRegisterBuffers(count, size);
+
+    auto &src = agents[0];
+    auto &dst = agents[1];
+
+    auto sleep_time = std::chrono::milliseconds(500);
+    nixl_status_t status;
+    nixl_blob_t md;
+
+    nixl_opt_args_t send_args;
+    send_args.ipAddr = dst.ip;
+    send_args.port = dst.port;
+
+    status = src.agent->sendLocalMD(&send_args);
+    ASSERT_EQ(status, NIXL_SUCCESS);
+
+    std::this_thread::sleep_for(sleep_time);
+
+    status = dst.agent->checkRemoteMD(src.name, {DRAM_SEG});
+    ASSERT_EQ(status, NIXL_SUCCESS);
+
+    status = src.agent->invalidateLocalMD(&send_args);
+    ASSERT_EQ(status, NIXL_SUCCESS);
+
+    std::this_thread::sleep_for(sleep_time);
+
+    status = dst.agent->checkRemoteMD(src.name, {DRAM_SEG});
+    ASSERT_EQ(status, NIXL_ERR_NOT_FOUND);
+}
+
+TEST_F(MetadataExchangeTestFixture, SocketFetchRemoteAndInvalidateLocal)
+{
+    for (size_t i = 0; i < agents.size(); i++)
+        agents[i].createAgentBackend();
+
+    size_t count = (std::rand() % 10) + 2;
+    size_t size = (std::rand() % 1024) + 1;
+    for (size_t i = 0; i < agents.size(); i++)
+        agents[i].initAndRegisterBuffers(count, size);
+
+    auto &src = agents[0];
+    auto &dst = agents[1];
+
+    auto sleep_time = std::chrono::milliseconds(500);
+    nixl_status_t status;
+    nixl_blob_t md;
+
+    nixl_opt_args_t fetch_args;
+    fetch_args.ipAddr = src.ip;
+    fetch_args.port = src.port;
+
+    status = dst.agent->fetchRemoteMD(src.name, &fetch_args);
+    ASSERT_EQ(status, NIXL_SUCCESS);
+
+    std::this_thread::sleep_for(sleep_time);
+
+    status = dst.agent->checkRemoteMD(src.name, {DRAM_SEG});
+    ASSERT_EQ(status, NIXL_SUCCESS);
+
+    // TODO: support invalidate local after remote fetch? (currently raises exception)
+
+    // nixl_opt_args_t send_args;
+    // send_args.ipAddr = dst.ip;
+    // send_args.port = dst.port;
+
+    // status = src.agent->invalidateLocalMD(&send_args);
+    // ASSERT_EQ(status, NIXL_SUCCESS);
+
+    // std::this_thread::sleep_for(sleep_time);
+
+    // status = dst.agent->checkRemoteMD(src.name, {DRAM_SEG});
+    // ASSERT_EQ(status, NIXL_ERR_NOT_FOUND);
+}
+
+TEST_F(MetadataExchangeTestFixture, SocketSendPartialLocal)
+{
+    for (size_t i = 0; i < agents.size(); i++)
+        agents[i].createAgentBackend();
+
+    size_t count = (std::rand() % 10) + 2;
+    size_t size = (std::rand() % 1024) + 1;
+    for (size_t i = 0; i < agents.size(); i++)
+        agents[i].initAndRegisterBuffers(count, size);
+
+    auto &src = agents[0];
+    auto &dst = agents[1];
+
+    auto sleep_time = std::chrono::milliseconds(500);
+    nixl_status_t status;
+    nixl_blob_t md;
+
+    nixl_opt_args_t send_args;
+    send_args.ipAddr = dst.ip;
+    send_args.port = dst.port;
+
+    // Step 1: Get and load connection info
+
+    status = src.agent->sendLocalPartialMD({DRAM_SEG}, &send_args);
+    ASSERT_EQ(status, NIXL_SUCCESS);
+
+    std::this_thread::sleep_for(sleep_time);
+
+    status = dst.agent->checkRemoteMD(src.name, {DRAM_SEG});
+    ASSERT_EQ(status, NIXL_SUCCESS);
+
+    // Step 2: Get partial metadata for agent 0 buffers except the last one
+
+    nixl_reg_dlist_t valid_descs(DRAM_SEG);
+    for (size_t i = 0; i < src.buffers.size() - 1; i++) {
+        valid_descs.addDesc(src.buffers[i].getBlobDesc());
+    }
+    nixl_reg_dlist_t invalid_descs(DRAM_SEG);
+    invalid_descs.addDesc(src.buffers.back().getBlobDesc());
+
+    status = src.agent->sendLocalPartialMD(valid_descs, &send_args);
+    ASSERT_EQ(status, NIXL_SUCCESS);
+
+    std::this_thread::sleep_for(sleep_time);
+
+    status = dst.agent->checkRemoteMD(src.name, valid_descs.trim());
+    ASSERT_EQ(status, NIXL_SUCCESS);
+
+    status = dst.agent->checkRemoteMD(src.name, invalid_descs.trim());
+    ASSERT_EQ(status, NIXL_ERR_NOT_FOUND);
+
+    status = src.agent->invalidateLocalMD(&send_args);
+    ASSERT_EQ(status, NIXL_SUCCESS);
+
+    std::this_thread::sleep_for(sleep_time);
+
+    // Step 3: Get and load again but with additional extra params
+
+    send_args.backends.push_back(src.backend_handle);
+    send_args.includeConnInfo = true;
+
+    status = src.agent->sendLocalPartialMD(valid_descs, &send_args);
+    ASSERT_EQ(status, NIXL_SUCCESS);
+
+    std::this_thread::sleep_for(sleep_time);
+
+    status = dst.agent->checkRemoteMD(src.name, valid_descs.trim());
+    ASSERT_EQ(status, NIXL_SUCCESS);
+
+    status = dst.agent->checkRemoteMD(src.name, invalid_descs.trim());
+    ASSERT_EQ(status, NIXL_ERR_NOT_FOUND);
+}
+
+TEST_F(MetadataExchangeTestFixture, SocketSendLocalPartialWithErrors)
+{
+    auto &src = agents[0];
+    auto &dst = agents[1];
+
+    src.createAgentBackend();
+
+    size_t count = (std::rand() % 10) + 1;
+    size_t size = (std::rand() % 1024) + 1;
+    src.initAndRegisterBuffers(count, size);
+
+    auto sleep_time = std::chrono::milliseconds(500);
+    nixl_status_t status;
+    nixl_blob_t md;
+
+    nixl_opt_args_t send_args;
+    send_args.ipAddr = dst.ip;
+    send_args.port = dst.port;
+
+    // Case 1: Use unregistered descriptors
+    MemBuffer unregistered_buffer(1024, DRAM_SEG);
+    nixl_reg_dlist_t unregistered_descs(DRAM_SEG);
+    unregistered_descs.addDesc(unregistered_buffer.getBlobDesc());
+
+    status = src.agent->sendLocalPartialMD(unregistered_descs, &send_args);
+    ASSERT_NE(status, NIXL_SUCCESS);
+
+    // Case 2: Attempt to load connection info on agent without backend
+    // TODO: This currently raises exception in commWorker thread
+
+    // status = src.agent->sendLocalPartialMD({DRAM_SEG}, &send_args);
+    // ASSERT_EQ(status, NIXL_SUCCESS);
+
+    // std::this_thread::sleep_for(sleep_time);
+
+    // // Agent 1 has no backend
+    // status = dst.agent->checkRemoteMD(src.name, {DRAM_SEG});
+    // ASSERT_NE(status, NIXL_SUCCESS);
 }
 
 } // namespace metadata_exchange
