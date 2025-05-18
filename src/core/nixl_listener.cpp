@@ -356,7 +356,7 @@ void nixlAgentData::commWorker(nixlAgent* myAgent){
         // first, accept new connections
         int new_fd = 0;
 
-        while(new_fd != -1 && config.useListenThread && !useEtcd) {
+        while(new_fd != -1 && config.useListenThread) {
             new_fd = listener->acceptClient();
             nixl_socket_peer_t accepted_client;
 
