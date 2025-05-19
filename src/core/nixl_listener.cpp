@@ -522,7 +522,10 @@ void nixlAgentData::commWorker(nixlAgent* myAgent){
                     std::string remote_agent;
                     ret = myAgent->loadRemoteMD(remote_md, remote_agent);
                     if(ret != NIXL_SUCCESS) {
-                        throw std::runtime_error("loadRemoteMD in listener thread failed, critically failing\n");
+                        NIXL_ERROR << "loadRemoteMD in listener thread failed for md from peer "
+                                   << socket_iter->first.first << ":" << socket_iter->first.second
+                                   << " with error " << ret;
+                        continue;
                     }
                     // not sure what to do with remote_agent
                 } else if(header == "SEND") {
@@ -535,7 +538,8 @@ void nixlAgentData::commWorker(nixlAgent* myAgent){
                     myAgent->invalidateRemoteMD(remote_agent);
                     break;
                 } else {
-                    throw std::runtime_error("Received socket message with bad header" + header + ", critically failing\n");
+                    NIXL_ERROR << "Received socket message with bad header" + header + " from peer "
+                               << socket_iter->first.first << ":" << socket_iter->first.second;
                 }
             }
 
