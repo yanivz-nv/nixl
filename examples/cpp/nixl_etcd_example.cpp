@@ -266,23 +266,27 @@ int main() {
     conn_params1.includeConnInfo = true;
     conn_params1.backends.push_back(ucx1);
     conn_params1.metadataLabel = PARTIAL_LABEL;
+    conn_params1.metadataDescs = &empty_dlist1;
 
     conn_params2.includeConnInfo = true;
     conn_params2.backends.push_back(ucx2);
     conn_params2.metadataLabel = PARTIAL_LABEL;
+    conn_params2.metadataDescs = &empty_dlist2;
 
     // Send partial metadata
-    status = A1.sendLocalPartialMD(empty_dlist1, &conn_params1);
+    status = A1.sendLocalMD(&conn_params1);
     assert(status == NIXL_SUCCESS);
 
-    status = A2.sendLocalPartialMD(empty_dlist2, &conn_params2);
+    status = A2.sendLocalMD(&conn_params2);
     assert(status == NIXL_SUCCESS);
 
     // Send once partial with default label
-    status = A1.sendLocalPartialMD(empty_dlist1, nullptr);
+    conn_params1.metadataLabel.clear();
+    status = A1.sendLocalMD(&conn_params1);
     assert(status == NIXL_SUCCESS);
 
-    status = A2.sendLocalPartialMD(empty_dlist2, nullptr);
+    conn_params2.metadataLabel.clear();
+    status = A2.sendLocalMD(&conn_params2);
     assert(status == NIXL_SUCCESS);
 
     nixl_opt_args_t fetch_params;

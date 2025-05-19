@@ -226,8 +226,12 @@ nixl_status_t partialMdTest(nixlAgent* A1, nixlAgent* A2, nixlBackendH* backend1
     A1->invalidateRemoteMD(agent2);
 
     nixl_reg_dlist_t empty_dlist(DRAM_SEG);
+
+    nixl_opt_args_t partial_md_params;
+    partial_md_params.metadataDescs = &empty_dlist;
+
     std::string partial_meta;
-    status = A2->getLocalPartialMD(empty_dlist, partial_meta, NULL);
+    status = A2->getLocalMD(partial_meta, &partial_md_params);
     assert(status == NIXL_SUCCESS);
     assert(partial_meta.size() > 0);
 
@@ -255,10 +259,11 @@ nixl_status_t partialMdTest(nixlAgent* A1, nixlAgent* A2, nixlBackendH* backend1
     for (int update = 0; update < NUM_UPDATES; update++) {
         // Toggle includeConnInfo to test that it doesn't affect metadata update
         extra_params2.includeConnInfo = !extra_params2.includeConnInfo;
+        extra_params2.metadataDescs = &dst_mem_lists[update];
 
         std::cout << "Metadata update #" << update << "\n";
         // Get partial metadata from A2
-        status = A2->getLocalPartialMD(dst_mem_lists[update], partial_meta, &extra_params2);
+        status = A2->getLocalMD(partial_meta, &extra_params2);
         assert(status == NIXL_SUCCESS);
         assert(partial_meta.size() > 0);
 

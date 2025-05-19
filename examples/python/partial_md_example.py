@@ -75,7 +75,7 @@ if __name__ == "__main__":
     assert init_agent.register_memory(init_reg_descs) is not None
 
     # Send first set of descriptors first
-    target_agent.send_partial_agent_metadata(
+    target_agent.send_agent_metadata(
         target_reg_descs1, True, ["UCX"], ip_addr, init_port
     )
 
@@ -122,7 +122,7 @@ if __name__ == "__main__":
         os.abort()
 
     # Now send rest of descs
-    target_agent.send_partial_agent_metadata(
+    target_agent.send_agent_metadata(
         target_reg_descs2, True, ["UCX"], ip_addr, init_port
     )
 

@@ -977,75 +977,33 @@ nixlAgent::genNotif(const std::string &remote_agent,
 }
 
 nixl_status_t
-nixlAgent::getLocalMD (nixl_blob_t &str) const {
-    size_t conn_cnt;
-    nixl_backend_t nixl_backend;
-    nixl_status_t ret;
-
-    NIXL_LOCK_GUARD(data->lock);
-    // data->connMD was populated when the backend was created
-    conn_cnt = data->connMD.size();
-
-    if (conn_cnt == 0) // Error, no backend supports remote
-        return NIXL_ERR_INVALID_PARAM;
-
-    nixlSerDes sd;
-    ret = sd.addStr("Agent", data->name);
-    if(ret)
-        return ret;
-
-    ret = sd.addBuf("Conns", &conn_cnt, sizeof(conn_cnt));
-    if(ret)
-        return ret;
-
-    for (auto &c : data->connMD) {
-        nixl_backend = c.first;
-        ret = sd.addStr("t", nixl_backend);
-        if(ret)
-            return ret;
-        ret = sd.addStr("c", c.second);
-        if(ret)
-            return ret;
-    }
-
-    ret = sd.addStr("", "MemSection");
-    if(ret)
-        return ret;
-
-    ret = data->memorySection->serialize(&sd);
-    if(ret)
-        return ret;
-
-    str = sd.exportStr();
-    return NIXL_SUCCESS;
-}
-
-nixl_status_t
-nixlAgent::getLocalPartialMD(const nixl_reg_dlist_t &descs,
-                             nixl_blob_t &str,
-                             const nixl_opt_args_t* extra_params) const {
+nixlAgent::getLocalMD (nixl_blob_t &str,
+                       const nixl_opt_args_t* extra_params) const {
+    const nixl_reg_dlist_t *descs =  extra_params ? extra_params->metadataDescs : nullptr;
     backend_list_t tmp_list;
     backend_list_t *backend_list;
     nixl_status_t ret;
 
     NIXL_LOCK_GUARD(data->lock);
 
-    if (!extra_params || extra_params->backends.size() == 0) {
-        if (descs.descCount() != 0) {
-            // Non-empty dlist, return backends that support the memory type
-            backend_list = &data->memToBackend[descs.getType()];
-            if (backend_list->empty())
-                return NIXL_ERR_NOT_FOUND;
-        } else {
-            // Empty dlist, return all backends
-            backend_list = &tmp_list;
-            for (const auto & elm : data->backendEngines)
-                backend_list->push_back(elm.second);
-        }
-    } else {
+    if (!extra_params || !descs || descs->descCount() == 0 || extra_params->backends.size() == 0) {
+        // Empty dlist, return all backends
+        backend_list = &tmp_list;
+        for (const auto & elm : data->backendEngines)
+            backend_list->push_back(elm.second);
+    } else if (descs && descs->descCount() > 0) {
+        // Non-empty dlist, return backends that support the memory type
+        backend_list = &data->memToBackend[descs->getType()];
+        if (backend_list->empty())
+            return NIXL_ERR_NOT_FOUND;
+    } else  if (extra_params && extra_params->backends.size() > 0) {
+        // Backends provided, use them
         backend_list = &tmp_list;
         for (const auto & elm : extra_params->backends)
             backend_list->push_back(elm->engine);
+    } else {
+        NIXL_ERROR << "Invalid extra parameters in getLocalMD";
+        return NIXL_ERR_INVALID_PARAM;
     }
 
     // First find all relevant engines and their conn info.
@@ -1065,8 +1023,8 @@ nixlAgent::getLocalPartialMD(const nixl_reg_dlist_t &descs,
     if(ret)
         return ret;
 
-    // Only add connection info if requested via extra_params or empty dlist
-    size_t conn_cnt = ((extra_params && extra_params->includeConnInfo) || descs.descCount() == 0) ?
+    // descs != nullptr --> extra_params != nullptr
+    size_t conn_cnt = (!descs || !descs->descCount() || extra_params->includeConnInfo) ?
                       found_iters.size() : 0;
     ret = sd.addBuf("Conns", &conn_cnt, sizeof(conn_cnt));
     if(ret)
@@ -1082,14 +1040,14 @@ nixlAgent::getLocalPartialMD(const nixl_reg_dlist_t &descs,
     }
 
     // No engines found, but there are descs, this is an error
-    if (selected_engines.size() == 0 && descs.descCount() > 0)
+    if (selected_engines.size() == 0 && descs && descs->descCount() > 0)
         return NIXL_ERR_BACKEND;
 
     ret = sd.addStr("", "MemSection");
     if(ret)
         return ret;
 
-    ret = data->memorySection->serializePartial(&sd, selected_engines, descs);
+    ret = data->memorySection->serialize(&sd, selected_engines, descs);
     if(ret)
         return ret;
 
@@ -1215,7 +1173,7 @@ nixlAgent::invalidateRemoteMD(const std::string &remote_agent) {
 nixl_status_t
 nixlAgent::sendLocalMD (const nixl_opt_args_t* extra_params) const {
     nixl_blob_t myMD;
-    nixl_status_t ret = getLocalMD(myMD);
+    nixl_status_t ret = getLocalMD(myMD, extra_params);
     if(ret < 0) return ret;
 
     // If IP is provided, use socket-based communication
@@ -1227,34 +1185,11 @@ nixlAgent::sendLocalMD (const nixl_opt_args_t* extra_params) const {
 #if HAVE_ETCD
     // If no IP is provided, use etcd (now via thread)
     if (data->useEtcd) {
-        data->enqueueCommWork(std::make_tuple(ETCD_SEND, default_metadata_label, 0, std::move(myMD)));
-        return NIXL_SUCCESS;
-    }
-    return NIXL_ERR_INVALID_PARAM;
-#else
-    return NIXL_ERR_NOT_SUPPORTED;
-#endif // HAVE_ETCD
-}
-
-nixl_status_t
-nixlAgent::sendLocalPartialMD(const nixl_reg_dlist_t &descs,
-                              const nixl_opt_args_t* extra_params) const {
-    nixl_blob_t myMD;
-    nixl_status_t ret = getLocalPartialMD(descs, myMD, extra_params);
-    if(ret < 0) return ret;
-
-    // If IP is provided, use socket-based communication
-    if (extra_params && !extra_params->ipAddr.empty()) {
-        data->enqueueCommWork(std::make_tuple(SOCK_SEND, extra_params->ipAddr, extra_params->port, std::move(myMD)));
-        return NIXL_SUCCESS;
-    }
-
-#if HAVE_ETCD
-    // If no IP is provided, use etcd (now via thread)
-    if (data->useEtcd) {
-        std::string metadata_label = extra_params && !extra_params->metadataLabel.empty() ?
-                                     extra_params->metadataLabel :
-                                     default_partial_metadata_label;
+        std::string metadata_label = !extra_params || !extra_params->metadataDescs ?
+                                     default_metadata_label :
+                                     (!extra_params->metadataLabel.empty() ?
+                                      extra_params->metadataLabel :
+                                      default_partial_metadata_label);
         data->enqueueCommWork(std::make_tuple(ETCD_SEND, std::move(metadata_label), 0, std::move(myMD)));
         return NIXL_SUCCESS;
     }

@@ -583,35 +583,27 @@ class nixl_agent:
             self.agent.genNotif(remote_agent_name, notif_msg, self.backends[backend])
 
     """
-    @brief Get the full metadata of the local agent.
+    @brief Get full or partial metadata of the local agent.
 
-    @return Metadata of the local agent, in bytes.
+    @param descs         Optional list of descriptors to include metadata about.
+                         If not provided, full metadata is returned.
+                         List can be empty (not None) if only trying to send connection info.
+    @param inc_conn_info Whether to include connection info in partial metadata.
+    @param backends      Optional list of backends to consider when constructing partial metadata.
+
+    @return Full or partial metadata of the local agent, in bytes.
     """
 
-    def get_agent_metadata(self) -> bytes:
-        return self.agent.getLocalMD()
-
-    """
-    @brief Get partial metadata of the local agent.
-
-    @param descs         The list of descriptors to include metadata about.
-                         List can be empty if only trying to send connection info.
-    @param inc_conn_info Whether to include connection info in the metadata.
-    @param backends      List of backends to consider when constructing partial metadata.
-
-    @return Metadata of the local agent, in bytes.
-    """
-
-    def get_partial_agent_metadata(
+    def get_agent_metadata(
         self,
-        descs: nixlBind.nixlRegDList,
+        descs: Optional[nixlBind.nixlRegDList] = None,
         inc_conn_info: bool = False,
         backends: list[str] = [],
     ) -> bytes:
         handle_list = []
         for backend_string in backends:
             handle_list.append(self.backends[backend_string])
-        return self.agent.getLocalPartialMD(descs, inc_conn_info, handle_list)
+        return self.agent.getLocalMD(descs, inc_conn_info, handle_list)
 
     """
     @brief Add a remote agent using its metadata. After this call, current agent can
@@ -647,19 +639,20 @@ class nixl_agent:
         self.agent.sendLocalMD(ip_addr, port)
 
     """
-    @brief Send partial metadata of the local agent.
+    @brief Send full or partial metadata of the local agent to a peer or central metadata server.
 
-    @param descs         The list of descriptors to include metadata about.
-                         List can be empty if only trying to send connection info.
-    @param inc_conn_info Whether to include connection info in the metadata.
-    @param backends      List of backends to consider when constructing partial metadata.
+    @param descs         Optional list of descriptors to include metadata about.
+                         If not provided, full metadata is sent.
+                         List can be empty (not None) if only trying to send connection info.
+    @param inc_conn_info Whether to include connection info in partial metadata.
+    @param backends      Optional list of backends to consider when constructing partial metadata.
     @param ip_addr       If specified, will only send metadata to one peer by IP address.
     @param port          If specified, will try to send to specific port.
     """
 
-    def send_partial_agent_metadata(
+    def send_agent_metadata(
         self,
-        descs: nixlBind.nixlRegDList,
+        descs: Optional[nixlBind.nixlRegDList],
         inc_conn_info: bool = False,
         backends: list[str] = [],
         ip_addr: str = "",
@@ -668,7 +661,7 @@ class nixl_agent:
         handle_list = []
         for backend_string in backends:
             handle_list.append(self.backends[backend_string])
-        self.agent.sendLocalPartialMD(descs, inc_conn_info, handle_list, ip_addr, port)
+        self.agent.sendLocalMD(descs, inc_conn_info, handle_list, ip_addr, port)
 
     """
     @brief Request metadata be retrieved from central metadata server or sent by peer.

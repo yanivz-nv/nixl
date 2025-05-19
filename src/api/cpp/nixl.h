@@ -324,32 +324,25 @@ class nixlAgent {
         /*** Metadata handling through side channel ***/
         /**
          * @brief  Get metadata blob for this agent, to be given to other agents.
-         *
-         * @param  str [out]     The serialized metadata blob
-         * @return nixl_status_t Error code if call was not successful
-         */
-        nixl_status_t
-        getLocalMD (nixl_blob_t &str) const;
-
-        /**
-         * @brief  Get partial metadata blob for this agent, to be given to other agents.
-         *         If `descs` is empty, only backends' connection info is included in the metadata,
-         *         regardless of the value of `extra_params->includeConnInfo` and `descs` memory type.
-         *         If `descs` is non-empty, the metadata of the descriptors in the list are included,
-         *         and if `extra_params->includeConnInfo` is true, the connection info of the
+         *         If `extra_params` or `extra_params->metadataDescs` is nullptr,
+         *         the full metadata is returned.
+         *         Else if `extra_params->metadataDescs` is non-nullptr but empty,
+         *         only the backends' connection info is included. All backends are included
+         *         regardless of the value of `extra_params->includeConnInfo` and `extra_params->backends`.
+         *         Else if `extra_params->metadataDescs` is non-nullptr and non-empty,
+         *         the metadata of the descriptors in the list are included, and if
+         *         `extra_params->includeConnInfo` is true, the connection info of the
          *         backends supporting the memory type is also included.
          *         If `extra_params->backends` is non-empty, only the descriptors supported by the
          *         backends in the list and the backends' connection info are included in the metadata.
          *
-         * @param  descs         [in]  Descriptor list to include in the metadata
-         * @param  str           [out] The serialized metadata blob
-         * @param  extra_params  [in]  Optional extra parameters used in getting partial metadata
-         * @return nixl_status_t       Error code if call was not successful
+         * @param  str [out]     The serialized metadata blob
+         * @param  extra_params [in]  Optional extra parameters used for getting metadata
+         * @return nixl_status_t Error code if call was not successful
          */
         nixl_status_t
-        getLocalPartialMD(const nixl_reg_dlist_t &descs,
-                          nixl_blob_t &str,
-                          const nixl_opt_args_t* extra_params = nullptr) const;
+        getLocalMD (nixl_blob_t &str,
+                    const nixl_opt_args_t *extra_params = nullptr) const;
 
         /**
          * @brief  Load other agent's metadata and unpack it internally. Now the local
@@ -376,40 +369,22 @@ class nixlAgent {
 
         /*** Metadata handling through direct channels (p2p socket and ETCD) ***/
         /**
-         * @brief  Send your own agent metadata to a remote location.
+         * @brief  Send partial metadata blob for this agent to peer or central metadata server.
          *
-         * @param  extra_params  Only to optionally specify IP address and/or port.
-         *                       If IP is specified, this will enable peer to peer sending of your metadata.
-         *                       If IP unspecified, this will send your data to the metadata server.
-         *                       Port can be specified or defaults to default_comm_port.
+         *         See getLocalMD for more details on the metadata options available with extra_params.
          *
+         *         If 'extra_params->ip_addr' is set, the metadata will only be sent to a single peer.
+         *         If 'extra_params->port' can be set in addition to IP address, or will default to default_comm_port.
+         *         In case of partial metadata - if 'extra_params->metadataLabel' is set, it will be used as the
+         *         label of the partial metadata to be sent to the central metadata server. Otherwise, the
+         *         default label of the partial metadata will be used for sending.
+         *         Full metadata always uses a default label.
+         *
+         * @param  extra_params  [in]  Optional extra parameters used in getting metadata
          * @return nixl_status_t Error code if call was not successful
          */
         nixl_status_t
         sendLocalMD (const nixl_opt_args_t* extra_params = nullptr) const;
-
-        /**
-         * @brief  Send partial metadata blob for this agent to peer or central metadata server
-         *         If `descs` is empty, only backends' connection info is included in the metadata,
-         *         regardless of the value of `extra_params->includeConnInfo` and `descs` memory type.
-         *         If `descs` is non-empty, the metadata of the descriptors in the list are included,
-         *         and if `extra_params->includeConnInfo` is true, the connection info of the
-         *         backends supporting the memory type is also included.
-         *         If `extra_params->backends` is non-empty, only the descriptors supported by the
-         *         backends in the list and the backends' connection info are included in the metadata.
-         *         If 'extra_params->ip_addr' is set, the metadata will only be sent to a single peer.
-         *         If 'extra_params->port' can be set in addition to IP address, or will default to default_comm_port.
-         *         If 'extra_params->metadataLabel' is set, it will be used as the label of the partial metadata
-         *         to be sent. Otherwise, the default label of the partial metadata will be used for sending.
-         *
-         * @param  descs         [in]  Descriptor list to include in the metadata
-         * @param  str           [out] The serialized metadata blob
-         * @param  extra_params  [in]  Optional extra parameters used in getting partial metadata
-         * @return nixl_status_t       Error code if call was not successful
-         */
-        nixl_status_t
-        sendLocalPartialMD(const nixl_reg_dlist_t &descs,
-                           const nixl_opt_args_t* extra_params = nullptr) const;
 
         /**
          * @brief  Fetch other agent's metadata and unpack it internally.

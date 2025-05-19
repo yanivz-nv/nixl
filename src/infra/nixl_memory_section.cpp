@@ -287,20 +287,19 @@ nixl_status_t serializeSections(nixlSerDes* serializer,
 }
 };
 
-nixl_status_t nixlLocalSection::serialize(nixlSerDes* serializer) const {
-    return serializeSections(serializer, sectionMap);
-}
-
-nixl_status_t nixlLocalSection::serializePartial(nixlSerDes* serializer,
-                                                 const backend_set_t &backends,
-                                                 const nixl_reg_dlist_t &mem_elms) const {
-    nixl_mem_t nixl_mem = mem_elms.getType();
+nixl_status_t nixlLocalSection::serialize(nixlSerDes* serializer,
+                                          const backend_set_t &backends,
+                                          const nixl_reg_dlist_t *mem_elms) const {
     section_map_t mem_elms_to_serialize;
 
-    // If there are no descriptors to serialize, just serialize empty list of sections
-    if (mem_elms.descCount() == 0)
+    // If no descriptor list, serialize all sections
+    if (!mem_elms)
+        return serializeSections(serializer, sectionMap);
+    // If empty descriptor list, just serialize empty list of sections
+    if (mem_elms->descCount() == 0)
         return serializeSections(serializer, mem_elms_to_serialize);
 
+    nixl_mem_t nixl_mem = mem_elms->getType();
     // TODO: consider concatenating 2 serializers instead of using mem_elms_to_serialize
     for (const auto &backend : backends) {
         section_key_t sec_key = std::make_pair(nixl_mem, backend);
@@ -309,8 +308,8 @@ nixl_status_t nixlLocalSection::serializePartial(nixlSerDes* serializer,
             continue;
 
         const auto &base = it->second;
-        auto resp = std::make_unique<nixl_sec_dlist_t>(nixl_mem, mem_elms.isSorted());
-        for (const auto &desc : mem_elms) {
+        auto resp = std::make_unique<nixl_sec_dlist_t>(nixl_mem, mem_elms->isSorted());
+        for (const auto &desc : *mem_elms) {
             int index = base->getIndex(desc);
             if (index < 0)
                 return NIXL_ERR_NOT_FOUND;

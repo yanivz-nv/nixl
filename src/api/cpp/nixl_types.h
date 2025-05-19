@@ -20,7 +20,6 @@
 #include <string>
 #include <unordered_map>
 
-
 /*** Forward declarations ***/
 class nixlSerDes;
 class nixlDlistH;
@@ -28,6 +27,8 @@ class nixlBackendH;
 class nixlXferReqH;
 class nixlAgentData;
 
+class nixlBlobDesc;
+template<class T> class nixlDescList;
 
 /*** NIXL memory type, operation and status enums ***/
 
@@ -165,9 +166,15 @@ class nixlAgentOptionalArgs {
 
         /**
          * @var includeConnInfo boolean to include connection information in the metadata,
-         *                      used in getLocalPartialMD.
+         *                      used in getLocalMD and sendLocalMD.
          */
         bool includeConnInfo = false;
+
+        /**
+         * @var descs A pointer to a nixl_reg_dlist_t to specify the descriptors to be included in the metadata,
+         *             used in getLocalMD and sendLocalMD for partial metadata transfer.
+         */
+        const nixlDescList<nixlBlobDesc> *metadataDescs = nullptr;
 
         /**
          * @var ipAddr Used to specify the IP address of a remote peer for metadata transfer.

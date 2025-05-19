@@ -124,6 +124,20 @@ def test_metadata_pass(two_ucx_agents):
     assert passed_name == agent1.name.encode()
 
 
+def test_partial_metadata_pass(two_ucx_agents):
+    agent1, agent2 = two_ucx_agents
+
+    addr = utils.malloc_passthru(1024)
+
+    agent1_reg_descs = agent1.get_reg_descs([(addr, 1024, 0, "test")], "DRAM")
+
+    assert agent1.register_memory(agent1_reg_descs) is not None
+
+    md = agent1.get_agent_metadata(agent1_reg_descs, True, ["UCX"])
+    passed_name = agent2.add_remote_agent(md)
+    assert passed_name == agent1.name.encode()
+
+
 @pytest.mark.timeout(5)
 def test_empty_notif_tag(two_connected_ucx_agents):
     agent1, agent2 = two_connected_ucx_agents
