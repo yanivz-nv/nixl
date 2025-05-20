@@ -121,13 +121,11 @@ private:
 public:
     nixlEtcdClient(const std::string& my_agent_name) {
         const char* etcd_endpoints = std::getenv("NIXL_ETCD_ENDPOINTS");
-        // Sanity check
         if (!etcd_endpoints || strlen(etcd_endpoints) == 0) {
             throw std::runtime_error("No etcd endpoints provided");
         }
 
         try {
-            // Create and return new etcd client
             etcd = std::make_unique<etcd::Client>(etcd_endpoints);
         } catch (const std::exception& e) {
             NIXL_ERROR << "Error creating etcd client: " << e.what();
@@ -140,7 +138,6 @@ public:
 
         NIXL_DEBUG << "Using etcd namespace for agents: " << namespace_prefix;
 
-        // Store agent's prefix key in etcd
         std::string agent_prefix = makeKey(my_agent_name, "");
         etcd::Response response = etcd->put(agent_prefix, "").get();
         if (!response.is_ok()) {
@@ -153,17 +150,13 @@ public:
     nixl_status_t storeMetadataInEtcd(const std::string& agent_name,
                                       const std::string& metadata_type,
                                       const nixl_blob_t& metadata) {
-        // Check if etcd client is available
         if (!etcd) {
             NIXL_ERROR << "ETCD client not available";
             return NIXL_ERR_NOT_SUPPORTED;
         }
 
         try {
-            // Create key for metadata
             std::string metadata_key = makeKey(agent_name, metadata_type);
-
-            // Store metadata in etcd
             etcd::Response response = etcd->put(metadata_key, metadata).get();
 
             if (response.is_ok()) {
@@ -182,17 +175,13 @@ public:
 
     // Remove all agent's metadata from etcd
     nixl_status_t removeMetadataFromEtcd(const std::string& agent_name) {
-        // Check if etcd client is available
         if (!etcd) {
             NIXL_ERROR << "ETCD client not available";
             return NIXL_ERR_NOT_SUPPORTED;
         }
 
         try {
-            // Create key for metadata with agent's prefix
             std::string agent_prefix = makeKey(agent_name, "");
-
-            // Remove all keys for the agent from etcd
             etcd::Response response = etcd->rmdir(agent_prefix, true).get();
 
             if (response.is_ok()) {
@@ -214,16 +203,13 @@ public:
     nixl_status_t fetchMetadataFromEtcd(const std::string& agent_name,
                                         const std::string& metadata_type,
                                         nixl_blob_t& metadata) {
-        // Check if etcd client is available
         if (!etcd) {
             NIXL_ERROR << "ETCD client not available";
             return NIXL_ERR_NOT_SUPPORTED;
         }
 
-        // Create key for agent's metadata
         std::string metadata_key = makeKey(agent_name, metadata_type);
         try {
-            // Fetch metadata from etcd
             etcd::Response response = etcd->get(metadata_key).get();
 
             if (response.is_ok()) {
@@ -270,7 +256,6 @@ public:
 
             auto watcher = etcd::Watcher(*etcd, metadata_key, watch_index, watcher_callback);
 
-            // TODO: different timeout?
             auto status = future.wait_for(std::chrono::seconds(5));
             if (status == std::future_status::timeout) {
                 NIXL_ERROR << "Watch timed out for key: " << metadata_key;
@@ -297,9 +282,7 @@ public:
             return NIXL_ERR_INVALID_PARAM;
         }
 
-        // Create key for agent's metadata
         std::string metadata_key = makeKey(remote_agent, metadata_label);
-        // Key not found, set up a watch
         NIXL_DEBUG << "Metadata not found, setting up watch for: " << metadata_key;
 
         return waitForMetadataFromEtcd(metadata_key, remote_metadata);
@@ -311,7 +294,6 @@ public:
             return;
         }
 
-        // Lambda to process etcd watcher events of a remote agent.
         // DELETE events are enqueued to be deleted in commWorker (can't be done inside the Watcher callback)
         auto process_response = [this, agent_name](etcd::Response response) -> void {
             if (!response.is_ok()) {
@@ -321,13 +303,13 @@ public:
             NIXL_DEBUG << "Watcher received " << response.events().size() << " events from etcd";
             if (response.events().size() != 1) {
                 NIXL_ERROR << "Watcher agent " << agent_name << " received unexpected number of events from etcd: "
-                        << response.events().size();
+                           << response.events().size();
                 return;
             }
             const auto &event = response.events()[0];
             if (event.event_type() == etcd::Event::EventType::PUT) {
                 NIXL_ERROR << "Unexpected PUT: " << event.kv().key()
-                        << " (rev " << event.kv().modified_index() << ") = " << event.kv().as_string();
+                           << " (rev " << event.kv().modified_index() << ") = " << event.kv().as_string();
 
             } else if (event.event_type() == etcd::Event::EventType::DELETE_) {
                 NIXL_DEBUG << "DELETE: " << event.kv().key() << " (rev " << event.kv().modified_index() << ")";
@@ -342,7 +324,6 @@ public:
 
     // Process invalidated agents from watchers
     void processInvalidatedAgents(nixlAgent* my_agent) {
-        // Check for invalidated agents
         std::vector<std::string> tmp_invalidated_agents;
         {
             std::lock_guard<std::mutex> lock(invalidated_agents_mutex);
@@ -586,7 +567,6 @@ void nixlAgentData::commWorker(nixlAgent* myAgent){
 
 #if HAVE_ETCD
         if (etcdClient) {
-            // Process invalidated agents from watchers
             etcdClient->processInvalidatedAgents(myAgent);
         }
 #endif // HAVE_ETCD
