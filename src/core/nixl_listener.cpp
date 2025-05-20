@@ -25,6 +25,7 @@
 #if HAVE_ETCD
 #include <etcd/Client.hpp>
 #include <etcd/Watcher.hpp>
+#include <future>
 #endif // HAVE_ETCD
 
 const std::string default_metadata_label = "metadata";
@@ -239,6 +240,51 @@ public:
         }
     }
 
+    nixl_status_t waitForMetadataFromEtcd(const std::string& metadata_key,
+                                          nixl_blob_t& remote_metadata) {
+        try {
+
+            // Get current index to watch from
+            etcd::Response response = etcd->get(metadata_key).get();
+            int64_t watch_index = response.index();
+            std::promise<nixl_status_t> ret_prom;
+            auto future = ret_prom.get_future();
+
+            // This lambda assumes lifetime only inside this method
+            auto watcher_callback = [&](etcd::Response response) -> void {
+                if (!response.is_ok()) {
+                    NIXL_ERROR << "Watch failed for key: " << metadata_key << " : "
+                               << response.error_message();
+                    ret_prom.set_value(NIXL_ERR_BACKEND);
+                    return;
+                }
+                if (response.action() == "delete") {
+                    NIXL_ERROR << "Watch response: metadata key deleted: " << metadata_key;
+                    ret_prom.set_value(NIXL_ERR_INVALID_PARAM);
+                    return;
+                }
+                remote_metadata = response.value().as_string();
+                NIXL_DEBUG << "Watch response: metadata key fetched: " << metadata_key;
+                ret_prom.set_value(NIXL_SUCCESS);
+            };
+
+            auto watcher = etcd::Watcher(*etcd, metadata_key, watch_index, watcher_callback);
+
+            // TODO: different timeout?
+            auto status = future.wait_for(std::chrono::seconds(5));
+            if (status == std::future_status::timeout) {
+                NIXL_ERROR << "Watch timed out for key: " << metadata_key;
+                return NIXL_ERR_BACKEND;
+            }
+            watcher.Cancel();
+            return future.get();
+
+        } catch (const std::exception& e) {
+            NIXL_ERROR << "Error watching etcd for key: " << metadata_key << " : " << e.what();
+            return NIXL_ERR_BACKEND;
+        }
+    }
+
     // Fetch metadata from etcd or wait for it to be available
     nixl_status_t fetchOrWaitForMetadataFromEtcd(const std::string& remote_agent,
                                                  const std::string& metadata_label,
@@ -256,30 +302,7 @@ public:
         // Key not found, set up a watch
         NIXL_DEBUG << "Metadata not found, setting up watch for: " << metadata_key;
 
-        try {
-
-            // Get current index to watch from
-            etcd::Response response = etcd->get(metadata_key).get();
-            int64_t watch_index = response.index();
-            // Set up watch
-            etcd::Response watch_response = etcd->watch(metadata_key, watch_index).get();
-
-            if (watch_response.is_ok()) {
-                if (watch_response.action() == "delete") {
-                    NIXL_ERROR << "Watch response: metadata deleted for agent: " << remote_agent;
-                    return NIXL_ERR_INVALID_PARAM;
-                }
-                remote_metadata = watch_response.value().as_string();
-                NIXL_DEBUG << "Watch response: metadata fetched for agent: " << remote_agent;
-                return NIXL_SUCCESS;
-            } else {
-                NIXL_ERROR << "Watch failed: " << watch_response.error_message();
-            }
-        } catch (const std::exception& e) {
-            NIXL_ERROR << "Error watching etcd: " << e.what();
-        }
-
-        return NIXL_ERR_UNKNOWN;
+        return waitForMetadataFromEtcd(metadata_key, remote_metadata);
     }
 
     // Setup a watcher for an agent's metadata invalidation if it doesn't already exist
