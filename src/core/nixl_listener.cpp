@@ -277,9 +277,6 @@ public:
         nixl_status_t ret = fetchMetadataFromEtcd(remote_agent, metadata_label, remote_metadata);
         if (ret == NIXL_SUCCESS) {
             return NIXL_SUCCESS;
-        } else if (ret == NIXL_ERR_INVALID_PARAM) {
-            NIXL_ERROR << "Metadata was invalidated for agent: " << remote_agent;
-            return NIXL_ERR_INVALID_PARAM;
         }
 
         std::string metadata_key = makeKey(remote_agent, metadata_label);
