@@ -16,11 +16,27 @@
  */
 #include <gtest/gtest.h>
 #include <thread>
+#include <random>
 #include "nixl.h"
 #include "common.h"
 
 namespace gtest {
 namespace metadata_exchange {
+
+namespace {
+
+int getRandomPort()
+{
+    static constexpr int min_port = 10000;
+    static constexpr int max_port = 65535;
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    static std::uniform_int_distribution<int> distr(min_port, max_port);
+
+    return distr(gen);
+}
+
+}; // unnamed namespace
 
 class MemBuffer {
 public:
@@ -57,6 +73,9 @@ private:
 class MetadataExchangeTestFixture : public testing::Test {
 
     struct AgentContext {
+        static constexpr size_t BUFF_COUNT_ = 5;
+        static constexpr size_t BUFF_SIZE_ = 1024;
+
         std::unique_ptr<nixlAgent> agent;
         const std::string name;
         const std::string ip = "127.0.0.1";
@@ -88,17 +107,21 @@ class MetadataExchangeTestFixture : public testing::Test {
 
             ASSERT_EQ(agent->registerMem(dlist), NIXL_SUCCESS);
         }
+
+        void initDefault() {
+            createAgentBackend();
+            initAndRegisterBuffers(BUFF_COUNT_, BUFF_SIZE_);
+        }
     };
 
 protected:
 
     void SetUp() override
     {
-        // Get random port between 10000 and 65535
-        int port_base = 10000 + (std::rand() % (65535 - 10000 + 1));
+        int port_base = getRandomPort();
 
         // Create two agents
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < AGENT_COUNT_; i++) {
             int port = port_base + i;
             std::string name = "agent_" + std::to_string(i);
             nixlAgentConfig cfg(false, true, port, nixl_thread_sync_t::NIXL_THREAD_SYNC_STRICT);
@@ -114,18 +137,21 @@ protected:
         agents_.clear();
     }
 
+    void initAgentsDefault()
+    {
+        for (auto &agent : agents_) {
+            agent.initDefault();
+        }
+    }
+
+    static constexpr int AGENT_COUNT_ = 2;
+
     std::vector<AgentContext> agents_;
 };
 
 TEST_F(MetadataExchangeTestFixture, GetLocalAndLoadRemote)
 {
-    for (size_t i = 0; i < agents_.size(); i++)
-        agents_[i].createAgentBackend();
-
-    size_t count = (std::rand() % 10) + 2;
-    size_t size = (std::rand() % 1024) + 1;
-    for (size_t i = 0; i < agents_.size(); i++)
-        agents_[i].initAndRegisterBuffers(count, size);
+    initAgentsDefault();
 
     nixl_xfer_dlist_t dlist(DRAM_SEG);
     for (const auto &buffer : agents_[1].buffers) {
@@ -159,8 +185,7 @@ TEST_F(MetadataExchangeTestFixture, LoadRemoteWithErrors)
     auto &src = agents_[0];
     auto &dst = agents_[1];
 
-    src.createAgentBackend();
-    src.initAndRegisterBuffers(3, 1024);
+    src.initDefault();
 
     std::string remote_name;
     nixl_blob_t md;
@@ -172,7 +197,7 @@ TEST_F(MetadataExchangeTestFixture, LoadRemoteWithErrors)
 
     ASSERT_NE(dst.agent->checkRemoteMD(src.name, {DRAM_SEG}), NIXL_SUCCESS);
 
-    dst.createAgentBackend();
+    dst.initDefault();
 
     // Invalid metadata
     ASSERT_NE(dst.agent->loadRemoteMD("invalid", remote_name), NIXL_SUCCESS);
@@ -183,13 +208,7 @@ TEST_F(MetadataExchangeTestFixture, LoadRemoteWithErrors)
 
 TEST_F(MetadataExchangeTestFixture, GetLocalPartialAndLoadRemote)
 {
-    for (size_t i = 0; i < agents_.size(); i++)
-        agents_[i].createAgentBackend();
-
-    size_t count = (std::rand() % 10) + 2;
-    size_t size = (std::rand() % 1024) + 1;
-    for (size_t i = 0; i < agents_.size(); i++)
-        agents_[i].initAndRegisterBuffers(count, size);
+    initAgentsDefault();
 
     auto &src = agents_[0];
     auto &dst = agents_[1];
@@ -247,11 +266,7 @@ TEST_F(MetadataExchangeTestFixture, GetLocalPartialWithErrors)
     auto &src = agents_[0];
     auto &dst = agents_[1];
 
-    src.createAgentBackend();
-
-    size_t count = (std::rand() % 10) + 1;
-    size_t size = (std::rand() % 1024) + 1;
-    src.initAndRegisterBuffers(count, size);
+    src.initDefault();
 
     std::string remote_name;
     nixl_blob_t md;
@@ -272,7 +287,7 @@ TEST_F(MetadataExchangeTestFixture, GetLocalPartialWithErrors)
 
     // Case 3: Attempt to load metadata without connection info
 
-    dst.createAgentBackend();
+    dst.initDefault();
 
     nixl_reg_dlist_t valid_descs(DRAM_SEG);
     for (const auto& buffer : src.buffers) {
@@ -299,13 +314,7 @@ TEST_F(MetadataExchangeTestFixture, GetLocalPartialWithErrors)
 
 TEST_F(MetadataExchangeTestFixture, SocketSendLocalAndInvalidateLocal)
 {
-    for (size_t i = 0; i < agents_.size(); i++)
-        agents_[i].createAgentBackend();
-
-    size_t count = (std::rand() % 10) + 2;
-    size_t size = (std::rand() % 1024) + 1;
-    for (size_t i = 0; i < agents_.size(); i++)
-        agents_[i].initAndRegisterBuffers(count, size);
+    initAgentsDefault();
 
     auto &src = agents_[0];
     auto &dst = agents_[1];
@@ -337,13 +346,7 @@ TEST_F(MetadataExchangeTestFixture, SocketSendLocalAndInvalidateLocal)
 
 TEST_F(MetadataExchangeTestFixture, SocketFetchRemoteAndInvalidateLocal)
 {
-    for (size_t i = 0; i < agents_.size(); i++)
-        agents_[i].createAgentBackend();
-
-    size_t count = (std::rand() % 10) + 2;
-    size_t size = (std::rand() % 1024) + 1;
-    for (size_t i = 0; i < agents_.size(); i++)
-        agents_[i].initAndRegisterBuffers(count, size);
+    initAgentsDefault();
 
     auto &src = agents_[0];
     auto &dst = agents_[1];
@@ -364,13 +367,7 @@ TEST_F(MetadataExchangeTestFixture, SocketFetchRemoteAndInvalidateLocal)
 
 TEST_F(MetadataExchangeTestFixture, SocketSendPartialLocal)
 {
-    for (size_t i = 0; i < agents_.size(); i++)
-        agents_[i].createAgentBackend();
-
-    size_t count = (std::rand() % 10) + 2;
-    size_t size = (std::rand() % 1024) + 1;
-    for (size_t i = 0; i < agents_.size(); i++)
-        agents_[i].initAndRegisterBuffers(count, size);
+    initAgentsDefault();
 
     auto &src = agents_[0];
     auto &dst = agents_[1];
@@ -430,11 +427,7 @@ TEST_F(MetadataExchangeTestFixture, SocketSendLocalPartialWithErrors)
     auto &src = agents_[0];
     auto &dst = agents_[1];
 
-    src.createAgentBackend();
-
-    size_t count = (std::rand() % 10) + 1;
-    size_t size = (std::rand() % 1024) + 1;
-    src.initAndRegisterBuffers(count, size);
+    src.initDefault();
 
     auto sleep_time = std::chrono::milliseconds(500);
     nixl_blob_t md;
