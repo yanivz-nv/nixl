@@ -664,11 +664,14 @@ class nixl_agent:
         backends: list[str] = [],
         ip_addr: str = "",
         port: int = DEFAULT_COMM_PORT,
+        label: str = "",
     ):
         handle_list = []
         for backend_string in backends:
             handle_list.append(self.backends[backend_string])
-        self.agent.sendLocalPartialMD(descs, inc_conn_info, handle_list, ip_addr, port)
+        self.agent.sendLocalPartialMD(
+            descs, inc_conn_info, handle_list, ip_addr, port, label
+        )
 
     """
     @brief Request metadata be retrieved from central metadata server or sent by peer.
@@ -682,8 +685,9 @@ class nixl_agent:
         remote_agent: str,
         ip_addr: str = "",
         port: int = DEFAULT_COMM_PORT,
+        label: str = "",
     ):
-        self.agent.fetchRemoteMD(remote_agent, ip_addr, port)
+        self.agent.fetchRemoteMD(remote_agent, ip_addr, port, label)
 
     """
     @brief Invalidate your own metadata in the central metadata server, or from a specific peer.
