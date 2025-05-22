@@ -655,6 +655,7 @@ class nixl_agent:
     @param backends      List of backends to consider when constructing partial metadata.
     @param ip_addr       If specified, will only send metadata to one peer by IP address.
     @param port          If specified, will try to send to specific port.
+    @param label         Label to use for the metadata when sending to central metadata server.
     """
 
     def send_partial_agent_metadata(
