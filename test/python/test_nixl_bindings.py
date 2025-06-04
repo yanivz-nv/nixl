@@ -15,6 +15,8 @@
 
 import pickle
 
+import numpy as np
+
 import nixl._bindings as nixl
 import nixl._utils as nixl_utils
 
@@ -45,7 +47,7 @@ def test_list():
     test_list.remDesc(1)
     assert test_list.descCount() == 2
 
-    assert test_list[0] == descs[0]
+    assert np.all(test_list[0] == descs[0])
 
     test_list.clear()
 

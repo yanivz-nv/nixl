@@ -338,6 +338,15 @@ nixlDescList<nixlBasicDesc> nixlDescList<T>::trim() const {
     }
 }
 
+template <>
+nixlDescList<nixlBlobDesc> nixlDescList<nixlBasicDesc>::pad() const {
+        nixlDescList<nixlBlobDesc> padded(type, sorted, descs.size());
+        for (size_t i = 0; i < descs.size(); i++) {
+            padded[i] = nixlBlobDesc(descs[i], "");
+        }
+        return padded;
+}
+
 template <class T>
 int nixlDescList<T>::getIndex(const nixlBasicDesc &query) const {
     if (!sorted) {
