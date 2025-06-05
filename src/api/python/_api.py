@@ -836,7 +836,8 @@ class nixl_agent:
             a) list of 4 element tuples (address, len, device ID, meta info) alongside a mandatory memory type
             b) a tensor
             c) a list of tensors
-            d) a nixlXferDList, which is padded with empty metadata
+            d) a Nx3 2D numpy array, each row defines a single descriptor (address, len, device ID),
+               alongside a mandatory memory type. Empty metadata will be added to each descriptor.
             e) passes along if a reg_dlist is given.
 
     @param descs List of any of the above types
@@ -857,7 +858,8 @@ class nixl_agent:
         if isinstance(descs, nixlBind.nixlRegDList):
             return descs
         elif isinstance(descs, nixlBind.nixlXferDList):
-            new_descs = nixlBind.nixlRegDList(descs)
+            print("XferList type detected for registration, please use RegList")
+            new_descs = None
         elif isinstance(descs[0], tuple):
             if mem_type is not None and len(descs[0]) == 4:
                 new_descs = nixlBind.nixlRegDList(
@@ -868,6 +870,19 @@ class nixl_agent:
                 new_descs = None
             else:
                 print("4-tuple list needed for registration")
+                new_descs = None
+        elif isinstance(descs, np.ndarray):
+            if mem_type is not None and descs.ndim == 2 and descs.shape[1] == 3:
+                new_descs = nixlBind.nixlRegDList(
+                    self.nixl_mems[mem_type], descs, is_sorted
+                )
+            elif mem_type is None:
+                print("Please specify a mem type if not using Tensors")
+                new_descs = None
+            else:
+                print(
+                    "Nx3 shape required for transfer descriptor list from numpy array"
+                )
                 new_descs = None
         elif isinstance(descs, torch.Tensor):
             mem_type = "cuda" if str(descs.device).startswith("cuda") else "cpu"
@@ -883,7 +898,7 @@ class nixl_agent:
             )
         elif isinstance(descs[0], torch.Tensor):  # List[torch.Tensor]:
             tensor_type = descs[0].device
-            dlist = [(0, 0, 0, "")] * len(descs)
+            dlist = np.zeros((len(descs), 3), dtype=np.uint64)
 
             for i in range(len(descs)):
                 if descs[i].device != tensor_type:
@@ -893,7 +908,7 @@ class nixl_agent:
                 gpu_id = descs[i].get_device()
                 if gpu_id == -1:  # DRAM
                     gpu_id = 0
-                dlist[i] = (base_addr, region_len, gpu_id, "")
+                dlist[i, :] = (base_addr, region_len, gpu_id)
             mem_type = "cuda" if str(tensor_type).startswith("cuda") else "cpu"
             new_descs = nixlBind.nixlRegDList(
                 self.nixl_mems[mem_type], dlist, is_sorted

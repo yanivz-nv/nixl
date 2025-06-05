@@ -114,10 +114,10 @@ def perf_test_array(num_descs: int, addr_base: int, length: int):
     print(f"get_xfer_descs:\t\t{elapsed:.4f} sec")
 
     start = time.perf_counter()
-    reg_dlist = agent.get_reg_descs(xfer_dlist)
+    reg_dlist = agent.get_reg_descs(descs_np, "DRAM", False)
     elapsed = time.perf_counter() - start
     assert reg_dlist.descCount() == num_descs
-    print(f"Pad nixlXferDList:\t{elapsed:.4f} sec")
+    print(f"get_reg_descs:\t\t{elapsed:.4f} sec")
 
     local_prep_handle, remote_prep_handle, xfer_handle = prep_handles(
         agent, xfer_dlist, reg_dlist, indices

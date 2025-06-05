@@ -251,10 +251,26 @@ PYBIND11_MODULE(_bindings, m) {
 
     py::class_<nixl_reg_dlist_t>(m, "nixlRegDList")
         .def(py::init<nixl_mem_t, bool, int>(), py::arg("type"), py::arg("sorted")=false, py::arg("init_size")=0)
-        .def(py::init([](const nixl_xfer_dlist_t &xfer_list) {
-                nixl_reg_dlist_t new_list(xfer_list.getType(), xfer_list.isSorted(), xfer_list.descCount());
-                for(int i = 0; i < xfer_list.descCount(); i++) {
-                    new_list[i] = nixlBlobDesc(xfer_list[i].addr, xfer_list[i].len, xfer_list[i].devId, "");
+        .def(py::init([](nixl_mem_t mem, py::array descs, bool sorted) {
+                if (descs.ndim() != 2 || descs.shape(1) != 3)
+                    throw std::invalid_argument("descs must be a Nx3 numpy array");
+                if (!py::dtype::of<uint64_t>().equal(descs.dtype()) && !py::dtype::of<int64_t>().equal(descs.dtype()))
+                    throw std::invalid_argument("descs must be a Nx3 numpy array of uint64 or int64");
+                if (!(descs.flags() & py::array::c_style)) {
+                    throw std::invalid_argument("descs must be a C-contiguous numpy array");
+                }
+                size_t n = descs.shape(0);
+                nixl_reg_dlist_t new_list(mem, sorted, n);
+                if (py::dtype::of<uint64_t>().equal(descs.dtype())) {
+                    auto buffer = descs.unchecked<uint64_t, 2>();
+                    for(size_t i = 0; i < n; i++) {
+                        new_list[i] = nixlBlobDesc(buffer(i, 0), buffer(i, 1), buffer(i, 2), "");
+                    }
+                } else {
+                    auto buffer = descs.unchecked<int64_t, 2>();
+                    for(size_t i = 0; i < n; i++) {
+                        new_list[i] = nixlBlobDesc(buffer(i, 0), buffer(i, 1), buffer(i, 2), "");
+                    }
                 }
                 return new_list;
         }))

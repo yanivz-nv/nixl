@@ -173,6 +173,10 @@ def test_improper_get_reg_descs(one_empty_agent, one_xfer_list):
     with pytest.raises(KeyError):
         ret = one_empty_agent.get_reg_descs(ok_list, mem_type="V-RAM")
 
+    # Passing reg list will not work
+    ret = one_empty_agent.get_reg_descs(one_xfer_list)
+    assert ret is None
+
 
 # monkeypatch limits scope of env change to this test
 # skipping because plugin manager is only created one time statically
