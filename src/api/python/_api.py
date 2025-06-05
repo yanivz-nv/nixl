@@ -315,7 +315,7 @@ class nixl_agent:
 
     @param agent_name Name of the agent. It can be "NIXL_INIT_AGENT", local agent name, or remote agent name
     @param xfer_list List of transfer descriptors, can be list of memory region tuples, tensors,
-                     Nx3 numpy array, or nixlXferDList.
+                     Nx3 numpy array, or nixlXferDList. See get_xfer_descs for more details on the structure.
     @param mem_type Optional memory type necessary for list of memory regions.
     @param is_sorted Optional bool for whether memory region list or tensor list are sorted.
                      For long lists of transfer descriptors, sorting can speed up transfer preparation.
@@ -749,7 +749,8 @@ class nixl_agent:
             a) list of 3 element tuples (address, len, device ID) alongside a mandatory memory type
             b) a tensor
             c) a list of tensors
-            d) a Nx3 2D numpy array
+            d) a Nx3 2D numpy array, each row defines a single descriptor (address, len, device ID),
+               alongside a mandatory memory type
             e) passes along if an xfer_dlist is given.
 
     @param descs List of any of the above types
@@ -784,7 +785,7 @@ class nixl_agent:
                 print("3-tuple list needed for transfer")
                 new_descs = None
         elif isinstance(descs, np.ndarray):
-            if mem_type is not None and descs.shape[1] == 3:
+            if mem_type is not None and descs.ndim == 2 and descs.shape[1] == 3:
                 new_descs = nixlBind.nixlXferDList(
                     self.nixl_mems[mem_type], descs, is_sorted
                 )
@@ -792,7 +793,9 @@ class nixl_agent:
                 print("Please specify a mem type if not using Tensors")
                 new_descs = None
             else:
-                print("Nx3 2D numpy array needed for transfer")
+                print(
+                    "Nx3 shape required for transfer descriptor list from numpy array"
+                )
                 new_descs = None
         elif isinstance(descs, torch.Tensor):
             mem_type = "cuda" if str(descs.device).startswith("cuda") else "cpu"
@@ -833,7 +836,8 @@ class nixl_agent:
             a) list of 4 element tuples (address, len, device ID, meta info) alongside a mandatory memory type
             b) a tensor
             c) a list of tensors
-            d) passes along if a reg_dlist is given.
+            d) a nixlXferDList, which is padded with empty metadata
+            e) passes along if a reg_dlist is given.
 
     @param descs List of any of the above types
     @param mem_type Optional memory type necessary for (a).
@@ -853,8 +857,7 @@ class nixl_agent:
         if isinstance(descs, nixlBind.nixlRegDList):
             return descs
         elif isinstance(descs, nixlBind.nixlXferDList):
-            print("XferList type detected for registration, please use RegList")
-            new_descs = None
+            new_descs = nixlBind.nixlRegDList(descs)
         elif isinstance(descs[0], tuple):
             if mem_type is not None and len(descs[0]) == 4:
                 new_descs = nixlBind.nixlRegDList(

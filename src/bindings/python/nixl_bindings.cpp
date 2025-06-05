@@ -21,6 +21,7 @@
 
 #include <tuple>
 #include <iostream>
+#include <cassert>
 
 #include "nixl.h"
 #include "serdes/serdes.h"
@@ -174,22 +175,22 @@ PYBIND11_MODULE(_bindings, m) {
     py::class_<nixl_xfer_dlist_t>(m, "nixlXferDList")
         .def(py::init<nixl_mem_t, bool, int>(), py::arg("type"), py::arg("sorted")=false, py::arg("init_size")=0)
         .def(py::init([](nixl_mem_t mem, py::array descs, bool sorted) {
-            static_assert(sizeof(nixlBasicDesc) == 3 * sizeof(uint64_t), "nixlBasicDesc size mismatch");
-            // Check array shape and dtype
-            if (descs.ndim() != 2 || descs.shape(1) != 3)
-                throw std::invalid_argument("descs must be a Nx3 numpy array");
-            if (!py::dtype::of<uint64_t>().equal(descs.dtype()) && !py::dtype::of<int64_t>().equal(descs.dtype()))
-                throw std::invalid_argument("descs must be a Nx3 numpy array of uint64 or int64");
-            if (!(descs.flags() & py::array::c_style)) {
-                throw std::invalid_argument("descs must be a C-contiguous numpy array");
-            }
-            size_t n = descs.shape(0);
-            nixl_xfer_dlist_t new_list(mem, sorted, n);
-            // We assume that the Nx3 array matches the nixlBasicDesc layout so we can simply memcpy
-            std::memcpy(&new_list[0], descs.data(), descs.size() * sizeof(uint64_t));
-            if (sorted) new_list.verifySorted();
-            return new_list;
-        }), py::arg("type"), py::arg("descs").noconvert(), py::arg("sorted")=false)
+                static_assert(sizeof(nixlBasicDesc) == 3 * sizeof(uint64_t), "nixlBasicDesc size mismatch");
+                // Check array shape and dtype
+                if (descs.ndim() != 2 || descs.shape(1) != 3)
+                    throw std::invalid_argument("descs must be a Nx3 numpy array");
+                if (!py::dtype::of<uint64_t>().equal(descs.dtype()) && !py::dtype::of<int64_t>().equal(descs.dtype()))
+                    throw std::invalid_argument("descs must be a Nx3 numpy array of uint64 or int64");
+                if (!(descs.flags() & py::array::c_style)) {
+                    throw std::invalid_argument("descs must be a C-contiguous numpy array");
+                }
+                size_t n = descs.shape(0);
+                nixl_xfer_dlist_t new_list(mem, sorted, n);
+                // We assume that the Nx3 array matches the nixlBasicDesc layout so we can simply memcpy
+                std::memcpy(&new_list[0], descs.data(), descs.size() * sizeof(uint64_t));
+                assert(!sorted || new_list.verifySorted());
+                return new_list;
+            }), py::arg("type"), py::arg("descs").noconvert(), py::arg("sorted")=false)
         .def(py::init([](nixl_mem_t mem, py::list descs, bool sorted) {
                 nixl_xfer_dlist_t new_list(mem, sorted, descs.size());
                 for(size_t i = 0; i < descs.size(); i++) {
@@ -202,7 +203,7 @@ PYBIND11_MODULE(_bindings, m) {
                     }
                     new_list[i] = nixlBasicDesc(desc[0].cast<uintptr_t>(), desc[1].cast<size_t>(), desc[2].cast<uint64_t>());
                 }
-                if (sorted) new_list.verifySorted();
+                assert(!sorted || new_list.verifySorted());
                 return new_list;
             }), py::arg("type"), py::arg("descs").noconvert(), py::arg("sorted")=false)
         .def("getType", &nixl_xfer_dlist_t::getType)
@@ -210,15 +211,9 @@ PYBIND11_MODULE(_bindings, m) {
         .def("isEmpty", &nixl_xfer_dlist_t::isEmpty)
         .def("isSorted", &nixl_xfer_dlist_t::isSorted)
         .def(py::self == py::self)
-        .def("__getitem__", [](nixl_xfer_dlist_t &list, unsigned int i) ->
-            py::array_t<uint64_t> {
+        .def("__getitem__", [](nixl_xfer_dlist_t &list, unsigned int i) -> py::tuple {
                 nixlBasicDesc &desc = list[i];
-                auto ret = py::array_t<uint64_t>({3});
-                auto buf = ret.mutable_unchecked<1>();
-                buf(0) = desc.addr;
-                buf(1) = desc.len;
-                buf(2) = desc.devId;
-                return ret;
+                return py::make_tuple(desc.addr, desc.len, desc.devId);
             })
         .def("__setitem__", [](nixl_xfer_dlist_t &list, unsigned int i, const py::tuple &desc) {
                 list[i] = nixlBasicDesc(desc[0].cast<uintptr_t>(), desc[1].cast<size_t>(), desc[2].cast<uint64_t>());
@@ -235,7 +230,6 @@ PYBIND11_MODULE(_bindings, m) {
                 if(ret < 0) throw_nixl_exception((nixl_status_t) ret);
                 return (int) ret;
             })
-        .def("pad", &nixl_xfer_dlist_t::pad)
         .def("remDesc", &nixl_xfer_dlist_t::remDesc)
         .def("verifySorted", &nixl_xfer_dlist_t::verifySorted)
         .def("clear", &nixl_xfer_dlist_t::clear)
@@ -257,6 +251,13 @@ PYBIND11_MODULE(_bindings, m) {
 
     py::class_<nixl_reg_dlist_t>(m, "nixlRegDList")
         .def(py::init<nixl_mem_t, bool, int>(), py::arg("type"), py::arg("sorted")=false, py::arg("init_size")=0)
+        .def(py::init([](const nixl_xfer_dlist_t &xfer_list) {
+                nixl_reg_dlist_t new_list(xfer_list.getType(), xfer_list.isSorted(), xfer_list.descCount());
+                for(int i = 0; i < xfer_list.descCount(); i++) {
+                    new_list[i] = nixlBlobDesc(xfer_list[i].addr, xfer_list[i].len, xfer_list[i].devId, "");
+                }
+                return new_list;
+        }))
         .def(py::init([](nixl_mem_t mem, py::list descs, bool sorted) {
                 nixl_reg_dlist_t new_list(mem, sorted, descs.size());
                 for(size_t i = 0; i < descs.size(); i++) {
@@ -269,7 +270,7 @@ PYBIND11_MODULE(_bindings, m) {
                     }
                     new_list[i] = nixlBlobDesc(desc[0].cast<uintptr_t>(), desc[1].cast<size_t>(), desc[2].cast<uint64_t>(), desc[3].cast<std::string>());
                 }
-                if (sorted) new_list.verifySorted();
+                assert(!sorted || new_list.verifySorted());
                 return new_list;
             }), py::arg("type"), py::arg("descs"), py::arg("sorted")=false)
         .def("getType", &nixl_reg_dlist_t::getType)

@@ -30,36 +30,36 @@ def init_agent():
 
 
 def prep_handles(agent: nixl_agent, xfer_dlist, reg_dlist, indices):
-    start = time.time()
+    start = time.perf_counter()
     xfer_dlist_trim = reg_dlist.trim()
-    elapsed = time.time() - start
+    elapsed = time.perf_counter() - start
     assert xfer_dlist_trim.descCount() == xfer_dlist.descCount()
     print(f"Trim nixlRegDList:\t{elapsed:.4f} sec")
 
-    start = time.time()
+    start = time.perf_counter()
     assert agent.register_memory(reg_dlist) is not None
-    elapsed = time.time() - start
+    elapsed = time.perf_counter() - start
     print(f"register_memory:\t{elapsed:.4f} sec")
 
-    start = time.time()
+    start = time.perf_counter()
     local_prep_handle = agent.prep_xfer_dlist(
         "NIXL_INIT_AGENT", xfer_dlist, "DRAM", False
     )
-    elapsed = time.time() - start
+    elapsed = time.perf_counter() - start
     assert local_prep_handle
     print(f"prep_xfer_dlist INIT:\t{elapsed:.4f} sec")
 
-    start = time.time()
+    start = time.perf_counter()
     remote_prep_handle = agent.prep_xfer_dlist("agent", xfer_dlist, "DRAM", False)
-    elapsed = time.time() - start
+    elapsed = time.perf_counter() - start
     assert remote_prep_handle
     print(f"prep_xfer_dlist SELF:\t{elapsed:.4f} sec")
 
-    start = time.time()
+    start = time.perf_counter()
     xfer_handle = agent.make_prepped_xfer(
         "WRITE", local_prep_handle, indices, remote_prep_handle, indices, b"UUID2"
     )
-    elapsed = time.time() - start
+    elapsed = time.perf_counter() - start
     assert xfer_handle
     print(f"make_prepped_xfer:\t{elapsed:.4f} sec")
 
@@ -74,18 +74,18 @@ def perf_test_list(num_descs: int, addr_base: int, length: int):
     descs_list = [(addr_base + i * length, length, 0) for i in range(num_descs)]
     indices = list(range(num_descs))
 
-    start = time.time()
+    start = time.perf_counter()
     xfer_dlist = agent.get_xfer_descs(descs_list, "DRAM", False)
-    elapsed = time.time() - start
+    elapsed = time.perf_counter() - start
     assert xfer_dlist.descCount() == num_descs
     print(f"get_xfer_descs:\t\t{elapsed:.4f} sec")
 
     blob_descs_list = [
         (addr_base + i * length, length, 0, b"") for i in range(num_descs)
     ]
-    start = time.time()
+    start = time.perf_counter()
     reg_dlist = agent.get_reg_descs(blob_descs_list, "DRAM", False)
-    elapsed = time.time() - start
+    elapsed = time.perf_counter() - start
     assert reg_dlist.descCount() == num_descs
     print(f"get_reg_descs:\t\t{elapsed:.4f} sec")
 
@@ -96,9 +96,9 @@ def perf_test_list(num_descs: int, addr_base: int, length: int):
     del agent
 
 
-def perf_test_numpy(num_descs: int, addr_base: int, length: int):
+def perf_test_array(num_descs: int, addr_base: int, length: int):
     print("-" * 40)
-    print("Starting numpy test...")
+    print("Starting array test...")
     print("-" * 40)
     agent = init_agent()
     descs_np = np.zeros((num_descs, 3), dtype=np.uint64)
@@ -107,15 +107,15 @@ def perf_test_numpy(num_descs: int, addr_base: int, length: int):
     descs_np[:, 1] = length
     descs_np[:, 2] = 0
 
-    start = time.time()
+    start = time.perf_counter()
     xfer_dlist = agent.get_xfer_descs(descs_np, "DRAM", False)
-    elapsed = time.time() - start
+    elapsed = time.perf_counter() - start
     assert xfer_dlist.descCount() == num_descs
     print(f"get_xfer_descs:\t\t{elapsed:.4f} sec")
 
-    start = time.time()
-    reg_dlist = xfer_dlist.pad()
-    elapsed = time.time() - start
+    start = time.perf_counter()
+    reg_dlist = agent.get_reg_descs(xfer_dlist)
+    elapsed = time.perf_counter() - start
     assert reg_dlist.descCount() == num_descs
     print(f"Pad nixlXferDList:\t{elapsed:.4f} sec")
 
@@ -152,4 +152,4 @@ if __name__ == "__main__":
     if args.mode == "list":
         perf_test_list(num_descs, addr_base, length)
     elif args.mode == "array":
-        perf_test_numpy(num_descs, addr_base, length)
+        perf_test_array(num_descs, addr_base, length)

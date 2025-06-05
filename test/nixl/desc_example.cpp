@@ -279,12 +279,6 @@ int main()
     dlist13.print();
     dlist14.print();
 
-    std::cout << "\nPad and trim...";
-    nixl_reg_dlist_t padded_dlist10 = dlist10.pad();
-    nixl_xfer_dlist_t trimmed_dlist10 = padded_dlist10.trim();
-    assert(trimmed_dlist10 == dlist10);
-    std::cout << " done.\n";
-
     std::cout << "\nSerDes DescList tests:\n";
     nixlSerDes* ser_des = new nixlSerDes();
     nixlSerDes* ser_des2 = new nixlSerDes();

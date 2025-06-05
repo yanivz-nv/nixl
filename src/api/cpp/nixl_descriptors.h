@@ -310,12 +310,6 @@ class nixlDescList {
          */
         nixlDescList<nixlBasicDesc> trim() const;
         /**
-         * @brief Convert a nixlDescList of nixlBasicDesc elements by padding
-         *        it with empty metadata. This is only specialized for nixlBasicDesc
-         *        elements.
-         */
-        nixlDescList<nixlBlobDesc> pad() const;
-        /**
          * @brief  Check if input descriptor `desc` overlaps with any descriptor
          *         within the current object, and returns its index if found.
          *

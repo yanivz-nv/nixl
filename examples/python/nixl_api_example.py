@@ -60,7 +60,7 @@ if __name__ == "__main__":
     agent1_xfer_descs_np = nixl_agent1.get_xfer_descs(
         agent1_addrs_np, "DRAM", is_sorted=True
     )
-    agent1_reg_descs_from_xfer = agent1_xfer_descs.pad()
+    agent1_reg_descs_from_xfer = nixl_agent1.get_reg_descs(agent1_xfer_descs)
 
     assert agent1_xfer_descs == agent1_xfer_descs_np
     assert agent1_reg_descs == agent1_reg_descs_from_xfer
